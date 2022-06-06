@@ -143,7 +143,7 @@ class NvidiaDataset(Dataset):
 
     def __init__(self, dataset_paths, transform=None, camera="front_wide", name="Nvidia dataset",
                  filter_turns=False, output_modality="steering_angle", n_branches=1, n_waypoints=6,
-                 metadata_file="nvidia_frames_ext.csv", color_space="rgb"):
+                 metadata_file="nvidia_frames.csv", color_space="rgb"):
         self.name = name
         self.metadata_file = metadata_file
         self.color_space = color_space
