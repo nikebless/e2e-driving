@@ -156,3 +156,63 @@ class PilotnetControl(nn.Module):
         x = self.regressor2(torch.cat([x, control], dim=1))
         x = self.regressor3(torch.cat([x, control], dim=1))
         return x
+
+
+class IbcPilotNet(nn.Module):
+    """
+    PilotNet with action candidates (Implicit Behavior Cloning)
+    https://implicitbc.github.io/
+    """
+
+    def __init__(self, n_input_channels=3):
+        super().__init__()
+
+        self.features = nn.Sequential(
+            nn.Conv2d(n_input_channels, 24, 5, stride=2),
+            nn.BatchNorm2d(24),
+            nn.LeakyReLU(),
+            nn.Conv2d(24, 36, 5, stride=2),
+            nn.BatchNorm2d(36),
+            nn.LeakyReLU(),
+            nn.Conv2d(36, 48, 5, stride=2),
+            nn.BatchNorm2d(48),
+            nn.LeakyReLU(),
+            nn.Conv2d(48, 64, 3, stride=1),
+            nn.BatchNorm2d(64),
+            nn.LeakyReLU(),
+            nn.Conv2d(64, 64, 3, stride=1),
+            nn.BatchNorm2d(64),
+            nn.LeakyReLU(),
+            nn.Flatten()
+        )
+
+        print('model features:', self.features)
+
+        self.regressor = nn.Sequential(
+            nn.Linear(1664+1, 100), # plus one for target candidate
+            nn.BatchNorm1d(100),
+            nn.LeakyReLU(),
+            nn.Linear(100, 50),
+            nn.BatchNorm1d(50),
+            nn.LeakyReLU(),
+            nn.Linear(50, 10),
+            nn.LeakyReLU(),
+            nn.Linear(10, 1),
+        )
+
+        print('model regressor:', self.regressor)
+
+    def forward(self, x, y):
+        print('x:', x.shape, x.dtype)
+        print('y:', y.shape, y.dtype)
+        out = self.features(x)
+        print('after features():', out.shape, out.dtype)
+        fused = torch.cat([out.unsqueeze(1).expand(-1, y.size(1), -1), y], dim=-1)
+        print('fused:', fused.shape, fused.dtype)
+        B, N, D = fused.size()
+        print('B, N, D:', B, N, D)
+        fused = fused.reshape(B * N, D)
+        print('fused (reshaped):', fused.shape, fused.dtype)
+        out = self.regressor(fused)
+        print('output:', out.shape, out.dtype)
+        return out.view(B, N)

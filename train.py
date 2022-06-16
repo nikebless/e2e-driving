@@ -6,17 +6,14 @@ import numpy as np
 import pandas as pd
 import torch
 import wandb
-from torch import Tensor
-from torch.nn import L1Loss, MSELoss
 from torch.utils.data import ConcatDataset, WeightedRandomSampler
 #from torchsummary import summary
 
 from dataloading.nvidia import NvidiaTrainDataset, NvidiaValidationDataset, NvidiaWinterTrainDataset, \
     NvidiaWinterValidationDataset, AugmentationConfig
 from dataloading.ouster import OusterTrainDataset, OusterValidationDataset
-from efficient_net import effnetv2_s
-from pilotnet import PilotNetConditional, PilotnetControl
-from trainer import ControlTrainer, ConditionalTrainer, PilotNetTrainer
+from pilotnet import PilotNetConditional
+import trainer as trainers
 
 
 def parse_arguments():
@@ -31,7 +28,7 @@ def parse_arguments():
     argparser.add_argument(
         '--model-type',
         required=True,
-        choices=['pilotnet', 'pilotnet-conditional', 'pilotnet-control', 'efficientnet'],
+        choices=['pilotnet', 'pilotnet-conditional', 'pilotnet-control', 'efficientnet', 'ibc'],
         help='Defines which model will be trained.'
     )
 
@@ -185,27 +182,14 @@ def parse_arguments():
         help='Pretrained model used to initialize weights.'
     )
 
+    argparser.add_argument(
+        '--stochastic-optimizer-train-samples',
+        type=int,
+        default=128,
+        help='Number of workers used for data loading.'
+    )
+
     return argparser.parse_args()
-
-
-class WeighedL1Loss(L1Loss):
-    def __init__(self, weights):
-        super().__init__(reduction='none')
-        self.weights = weights
-
-    def forward(self, input: Tensor, target: Tensor) -> Tensor:
-        loss = super().forward(input, target)
-        return (loss * self.weights).mean()
-
-
-class WeighedMSELoss(MSELoss):
-    def __init__(self, weights):
-        super().__init__(reduction='none')
-        self.weights = weights
-
-    def forward(self, input: Tensor, target: Tensor) -> Tensor:
-        loss = super().forward(input, target)
-        return (loss * self.weights).mean()
 
 
 class TrainingConfig:
@@ -227,6 +211,7 @@ class TrainingConfig:
         self.wandb_project = args.wandb_project
         self.loss = args.loss
         self.loss_discount_rate = args.loss_discount_rate
+        self.stochastic_optimizer_train_samples = args.stochastic_optimizer_train_samples
 
         self.n_input_channels = 1 if self.lidar_channel else 3
         if self.output_modality == "waypoints":
@@ -252,22 +237,16 @@ def train_model(model_name, train_conf, augment_conf):
 
     train_loader, valid_loader = load_data(train_conf, augment_conf)
 
-    # TODO: model and trainer should be combined
     if train_conf.model_type == "pilotnet-control":
-        model = PilotnetControl(train_conf.n_input_channels, train_conf.n_outputs)
-        trainer = ControlTrainer(model_name, train_conf.output_modality, train_conf.n_branches,
-                                 train_conf.wandb_project)
+        trainer = trainers.ControlTrainer(model_name=model_name, train_conf=train_conf)
     elif train_conf.model_type == "pilotnet-conditional":
-        model = PilotNetConditional(train_conf.n_input_channels, train_conf.n_outputs, train_conf.n_branches)
-        trainer = ConditionalTrainer(model_name, train_conf.output_modality, train_conf.n_branches,
-                                     train_conf.wandb_project)
+        trainer = trainers.ConditionalTrainer(model_name=model_name, train_conf=train_conf)
     elif train_conf.model_type == "efficientnet":
-        model = effnetv2_s()
-        trainer = PilotNetTrainer(model_name, target_name="steering_angle")
+        trainer = trainers.PilotNetTrainer(model_name=model_name, train_conf=train_conf)
+    elif train_conf.model_type == "ibc":
+        trainer = trainers.IbcTrainer(model_name=model_name, train_conf=train_conf, train_dataloader=train_loader)
     else:
-        model = PilotNetConditional(train_conf.n_input_channels, train_conf.n_outputs, train_conf.n_branches)
-        trainer = ConditionalTrainer(model_name, train_conf.output_modality, train_conf.n_branches,
-                                     train_conf.wandb_project)
+        trainer = trainers.ConditionalTrainer(model_name=model_name, train_conf=train_conf)
 
     #summary(model, input_size=(3, 660, 172), device="cpu")
     #summary(model, input_size=(3, 264, 68), device="cpu")
@@ -278,38 +257,12 @@ def train_model(model_name, train_conf, augment_conf):
                                       train_conf.n_input_channels,
                                       train_conf.n_outputs,
                                       n_branches=1)
-        model.features.load_state_dict(pretrained_model.features.state_dict())
+        trainer.model.features.load_state_dict(pretrained_model.features.state_dict())
         for i in range(train_conf.n_branches):
-            model.conditional_branches[i].load_state_dict(pretrained_model.conditional_branches[0].state_dict())
+            trainer.model.conditional_branches[i].load_state_dict(pretrained_model.conditional_branches[0].state_dict())
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    weights = torch.FloatTensor([(train_conf.loss_discount_rate ** i, train_conf.loss_discount_rate ** i)
-                                 for i in range(train_conf.n_waypoints)]).to(device)
-    weights = weights.flatten()
-    if train_conf.n_branches > 1:  # todo: this is conditional learning specific and should be handled there
-        weights = torch.cat(tuple(weights for i in range(train_conf.n_branches)), 0)
-
-    if train_conf.loss == "mse":
-        criterion = MSELoss()
-    elif train_conf.loss == "mae":
-        criterion = L1Loss()
-    elif train_conf.loss == "mse-weighted":
-        criterion = WeighedMSELoss(weights)
-    elif train_conf.loss == "mae-weighted":
-        criterion = WeighedL1Loss(weights)
-    else:
-        print(f"Uknown loss function {train_conf.loss}")
-        sys.exit()
-
-    optimizer = torch.optim.AdamW(model.parameters(), lr=train_conf.learning_rate, betas=(0.9, 0.999),
-                                  eps=1e-08, weight_decay=train_conf.weight_decay, amsgrad=False)
-
-    # todo: move this to trainer
-    model = model.to(device)
-    criterion = criterion.to(device)
-
-    trainer.train(model, train_loader, valid_loader, optimizer, criterion,
-                  train_conf.max_epochs, train_conf.patience, train_conf.fps)
+    trainer.train(train_loader, valid_loader, train_conf.max_epochs,
+                  train_conf.patience, train_conf.fps)
 
 
 def load_model(model_name, n_input_channels=3, n_outputs=1, n_branches=1):
