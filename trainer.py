@@ -14,6 +14,7 @@ from torch.nn import L1Loss, MSELoss, CrossEntropyLoss
 from tqdm.auto import tqdm
 import wandb
 import time
+import logging
 
 from metrics.metrics import calculate_open_loop_metrics, calculate_trajectory_open_loop_metrics
 
@@ -232,7 +233,7 @@ class Trainer:
             recv_batch_timestap = time.time()
             batch_wait_time = recv_batch_timestap - ask_batch_timestamp
             batch_wait_times.append(batch_wait_time)
-            print(f'Model waited for batch: {batch_wait_time * 1000:.2f}ms | avg: {np.mean(batch_wait_times) * 1000:.2f}ms (±{np.std(batch_wait_times) * 1000:.2f}) | max: {np.max(batch_wait_times) * 1000:.2f}ms | rate: {loader.batch_size / np.mean(batch_wait_times):.2f} FPS')
+            logging.debug(f'\nModel waited for batch: {batch_wait_time * 1000:.2f}ms | avg: {np.mean(batch_wait_times) * 1000:.2f}ms (±{np.std(batch_wait_times) * 1000:.2f}) | max: {np.max(batch_wait_times) * 1000:.2f}ms | rate: {loader.batch_size / np.mean(batch_wait_times):.2f} FPS')
 
             optimizer.zero_grad()
 
@@ -240,6 +241,8 @@ class Trainer:
 
             loss.backward()
             optimizer.step()
+            if self.scheduler:
+                self.scheduler.step()
 
             running_loss += loss.item()
 
@@ -267,7 +270,7 @@ class Trainer:
             ask_batch_timestamp = time.time()
             for i, (data, target_values, condition_mask) in enumerate(iterator):
                 recv_batch_timestap = time.time()
-                print(f'Model waited for batch: %.2f ms', (recv_batch_timestap - ask_batch_timestamp) * 1000)
+                logging.debug(f'Model waited for batch: {(recv_batch_timestap - ask_batch_timestamp) * 1000:.2f} ms')
 
                 predictions, loss = self.train_batch(model, data, target_values, condition_mask, criterion)
                 epoch_loss += loss.item()
@@ -448,6 +451,7 @@ class IbcTrainer(Trainer):
         stochastic_optim_config = optimizers.DerivativeFreeConfig(
             bounds=target_bounds,
             train_samples=train_conf.stochastic_optimizer_train_samples,
+            inference_samples=train_conf.stochastic_optimizer_inference_samples,
         )
 
         return optim_config, stochastic_optim_config
@@ -471,15 +475,22 @@ class IbcTrainer(Trainer):
         inputs = input['image'].to(self.device)
         target = target.to(self.device, torch.float32)
 
+        logging.debug(f'inputs: {inputs.shape} {inputs.dtype}')
+        logging.debug(f'target: {target.shape} {target.dtype}')
+
         # Generate N negatives, one for each element in the batch: (B, N, D).
         negatives = self.stochastic_optimizer.sample(inputs.size(0), self.model)
 
         # Merge target and negatives: (B, N+1, D).
         targets = torch.cat([target.unsqueeze(dim=1), negatives], dim=1)
+        logging.debug(f'merged targets (should be [B, N+1, D]): {targets.shape} {targets.dtype}')
+
 
         # Generate a random permutation of the positives and negatives.
         permutation = torch.rand(targets.size(0), targets.size(1)).argsort(dim=1)
+        logging.debug(f'permutation: {permutation.shape} {permutation.dtype}')
         targets = targets[torch.arange(targets.size(0)).unsqueeze(-1), permutation]
+        logging.debug(f'permuted targets: {targets.shape} {targets.dtype}')
 
         # Get the original index of the positive. This will serve as the class label
         # for the loss.
@@ -494,20 +505,18 @@ class IbcTrainer(Trainer):
         # to train the EBM.
         logits = -1.0 * energy
 
-        print('\ninput to loss:')
-        print('logits:', logits.shape)
-        print('ground truth:', ground_truth.shape)
+        logging.debug(f'input to loss:')
+        logging.debug(f'logits: {logits.shape}')
+        logging.debug(f'ground truth: {ground_truth.shape}')
         loss = self.criterion(logits, ground_truth)
 
         self.optimizer.zero_grad(set_to_none=True)
-        self.scheduler.step()
-
         self.steps += 1
 
         return energy, loss
 
     @torch.no_grad()
-    def evaluate(self, iterator, _, progress_bar, epoch, train_loss):
+    def evaluate(self, _, iterator, __, progress_bar, epoch, train_loss):
         self.model.eval()
         all_predictions = []
 
@@ -515,21 +524,21 @@ class IbcTrainer(Trainer):
 
         epoch_mse = 0.0
         ask_batch_timestamp = time.time()
-        for i, (input, target) in enumerate(iterator):
+        for i, (input, target, _) in enumerate(iterator):
             recv_batch_timestap = time.time()
-            print(f'Model waited for batch: %.2f ms', (recv_batch_timestap - ask_batch_timestamp) * 1000)
+            logging.debug(f'\nModel waited for batch: {(recv_batch_timestap - ask_batch_timestamp) * 1000:.2f} ms')
 
-            input = input.to(self.device)
-            target = target.to(self.device)
+            inputs = input['image'].to(self.device)
+            target = target.to(self.device, torch.float32)
 
             inference_start = time.time()
-            preds = self.stochastic_optimizer.infer(input, self.model)
+            preds = self.stochastic_optimizer.infer(inputs, self.model)
             inference_end = time.time()
 
             inference_time = inference_end - inference_start
             inference_times.append(inference_time)
 
-            print(f'inference time: {inference_time} | avg : {np.mean(inference_times)} | max: {np.max(inference_times)} | min: {np.min(inference_times)}')
+            logging.debug(f'inference time: {inference_time} | avg : {np.mean(inference_times)} | max: {np.max(inference_times)} | min: {np.min(inference_times)}')
 
             mse = F.mse_loss(preds, target, reduction="none")
             epoch_mse += mse.mean(dim=-1).sum().item()

@@ -1,6 +1,7 @@
 import argparse
 import sys
 from pathlib import Path
+import logging
 
 import numpy as np
 import pandas as pd
@@ -186,7 +187,20 @@ def parse_arguments():
         '--stochastic-optimizer-train-samples',
         type=int,
         default=128,
-        help='Number of workers used for data loading.'
+        help='Number of counterexamples used for EBM training.'
+    )
+
+    argparser.add_argument(
+        '--stochastic-optimizer-inference-samples',
+        type=int,
+        default=2**10, 
+        help='Number of samples used for test-time EBM inference.'
+    )
+
+    argparser.add_argument(
+        '--debug',
+        action='store_true',
+        help='When true, debug mode is enabled.'
     )
 
     return argparser.parse_args()
@@ -212,6 +226,14 @@ class TrainingConfig:
         self.loss = args.loss
         self.loss_discount_rate = args.loss_discount_rate
         self.stochastic_optimizer_train_samples = args.stochastic_optimizer_train_samples
+        self.stochastic_optimizer_inference_samples = args.stochastic_optimizer_inference_samples
+        self.debug = args.debug
+
+        log_format = "%(message)s"
+        if self.debug:
+            logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, format=log_format)
+        else:
+            logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=log_format)
 
         self.n_input_channels = 1 if self.lidar_channel else 3
         if self.output_modality == "waypoints":

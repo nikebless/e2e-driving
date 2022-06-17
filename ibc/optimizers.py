@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import enum
 from typing import Protocol
+import logging
 
 import numpy as np
 import torch
@@ -108,8 +109,12 @@ class DerivativeFreeOptimizer:
         noise_scale = self.noise_scale
         bounds = torch.as_tensor(self.bounds).to(self.device)
 
+
+        logging.debug(f'x: {x.shape}')
         samples = self._sample(x.size(0) * self.inference_samples)
+        logging.debug(f'samples: {samples.shape}')
         samples = samples.reshape(x.size(0), self.inference_samples, -1)
+        logging.debug(f'samples reshaped: {samples.shape}')
 
         for i in range(self.iters):
             # Compute energies.

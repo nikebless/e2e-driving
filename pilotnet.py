@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+import logging
 
 class PilotNet(nn.Module):
     """
@@ -186,7 +186,7 @@ class IbcPilotNet(nn.Module):
             nn.Flatten()
         )
 
-        print('model features:', self.features)
+        logging.debug(f'model features: {self.features}')
 
         self.regressor = nn.Sequential(
             nn.Linear(1664+1, 100), # plus one for target candidate
@@ -200,19 +200,19 @@ class IbcPilotNet(nn.Module):
             nn.Linear(10, 1),
         )
 
-        print('model regressor:', self.regressor)
+        logging.debug(f'model regressor: {self.regressor}')
 
     def forward(self, x, y):
-        print('x:', x.shape, x.dtype)
-        print('y:', y.shape, y.dtype)
+        logging.debug(f'x: {x.shape} {x.dtype}')
+        logging.debug(f'y: {y.shape} {y.dtype}')
         out = self.features(x)
-        print('after features():', out.shape, out.dtype)
+        logging.debug(f'after features(): {out.shape} {out.dtype}')
         fused = torch.cat([out.unsqueeze(1).expand(-1, y.size(1), -1), y], dim=-1)
-        print('fused:', fused.shape, fused.dtype)
+        logging.debug(f'fused: {fused.shape} {fused.dtype}')
         B, N, D = fused.size()
-        print('B, N, D:', B, N, D)
+        logging.debug(f'B, N, D: {B} {N} {D}')
         fused = fused.reshape(B * N, D)
-        print('fused (reshaped):', fused.shape, fused.dtype)
+        logging.debug(f'fused (reshaped): {fused.shape} {fused.dtype}')
         out = self.regressor(fused)
-        print('output:', out.shape, out.dtype)
+        logging.debug(f'output: {out.shape} {out.dtype}')
         return out.view(B, N)
