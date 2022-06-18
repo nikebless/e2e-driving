@@ -69,7 +69,7 @@ class Trainer:
             self.criterion = WeighedL1Loss(weights)
         elif train_conf.loss == "ebm":
             # MAE will be used in evaluation
-            self.criterion = CrossEntropyLoss(weights)
+            self.criterion = CrossEntropyLoss()
         else:
             print(f"Uknown loss function {train_conf.loss}")
             sys.exit()
@@ -541,8 +541,8 @@ class IbcTrainer(Trainer):
 
             logging.debug(f'inference time: {inference_time} | avg : {np.mean(inference_times)} | max: {np.max(inference_times)} | min: {np.min(inference_times)}')
 
-            mae = F.l1_loss(preds, target, reduction="none")
-            epoch_mae += mae.mean(dim=-1).sum().item()
+            mae = F.l1_loss(preds, target)
+            epoch_mae += mae.item()
 
             all_predictions.extend(preds.cpu().squeeze().numpy())
 
@@ -551,6 +551,6 @@ class IbcTrainer(Trainer):
 
             ask_batch_timestamp = time.time()
 
-        avg_mse = epoch_mae / len(iterator)
+        avg_mae = epoch_mae / len(iterator)
         result = np.array(all_predictions)
-        return avg_mse, result
+        return avg_mae, result

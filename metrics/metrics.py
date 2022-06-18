@@ -1,6 +1,7 @@
 import argparse
 import sys
 from pathlib import Path
+import logging
 
 import numpy as np
 import pandas as pd
@@ -45,6 +46,11 @@ def calculate_closed_loop_metrics(model_frames, expert_frames, fps=30, failure_r
 def calculate_open_loop_metrics(predicted_steering, true_steering, fps):
     predicted_degrees = predicted_steering / np.pi * 180
     true_degrees = true_steering / np.pi * 180
+
+    somewhere_middle = len(predicted_degrees) // 2
+
+    logging.debug(f'Predicted degrees: {predicted_degrees[somewhere_middle:somewhere_middle+20]}')
+    logging.debug(f'True degrees: {true_degrees[somewhere_middle:somewhere_middle+20]}')
     errors = np.abs(true_degrees - predicted_degrees)
     mae = errors.mean()
     rmse = np.sqrt((errors ** 2).mean())
