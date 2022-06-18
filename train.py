@@ -255,7 +255,11 @@ def train_model(model_name, train_conf, augment_conf):
 
     print(f"Training model {model_name}, wandb_project={train_conf.wandb_project}")
     if train_conf.wandb_project:
-        wandb.init(project=train_conf.wandb_project, config=train_conf, settings=wandb.Settings(start_method='fork'))
+        args = {}
+        if "falcon" in socket.gethostname():
+            args['settings'] = wandb.Settings(start_method='fork')
+
+        wandb.init(project=train_conf.wandb_project, config=train_conf, **args)
     print('train_conf: ', train_conf.__dict__)
     print('augment_conf: ', augment_conf.__dict__)
 

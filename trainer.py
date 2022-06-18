@@ -495,7 +495,7 @@ class IbcTrainer(Trainer):
 
         # Get the original index of the positive. This will serve as the class label
         # for the loss.
-        ground_truth = (permutation == 0).nonzero()[:, 1].view(-1, 1).to(self.device)
+        ground_truth = (permutation == 0).nonzero()[:, 1].to(self.device)
 
         # For every element in the mini-batch, there is 1 positive for which the EBM
         # should output a low energy value, and N negatives for which the EBM should
@@ -541,7 +541,7 @@ class IbcTrainer(Trainer):
 
             logging.debug(f'inference time: {inference_time} | avg : {np.mean(inference_times)} | max: {np.max(inference_times)} | min: {np.min(inference_times)}')
 
-            mae = F.l1_loss(preds, target)
+            mae = F.l1_loss(preds, target.view(-1, 1))
             epoch_mae += mae.item()
 
             all_predictions.extend(preds.cpu().squeeze().numpy())
