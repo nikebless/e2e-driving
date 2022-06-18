@@ -68,6 +68,7 @@ class Trainer:
         elif train_conf.loss == "mae-weighted":
             self.criterion = WeighedL1Loss(weights)
         elif train_conf.loss == "ebm":
+            # MAE will be used in evaluation
             self.criterion = CrossEntropyLoss(weights)
         else:
             print(f"Uknown loss function {train_conf.loss}")
@@ -522,7 +523,7 @@ class IbcTrainer(Trainer):
 
         inference_times = []
 
-        epoch_mse = 0.0
+        epoch_mae = 0.0
         ask_batch_timestamp = time.time()
         for i, (input, target, _) in enumerate(iterator):
             recv_batch_timestap = time.time()
@@ -540,16 +541,16 @@ class IbcTrainer(Trainer):
 
             logging.debug(f'inference time: {inference_time} | avg : {np.mean(inference_times)} | max: {np.max(inference_times)} | min: {np.min(inference_times)}')
 
-            mse = F.mse_loss(preds, target, reduction="none")
-            epoch_mse += mse.mean(dim=-1).sum().item()
+            mae = F.l1_loss(preds, target, reduction="none")
+            epoch_mae += mae.mean(dim=-1).sum().item()
 
             all_predictions.extend(preds.cpu().squeeze().numpy())
 
             progress_bar.update(1)
-            progress_bar.set_description(f'epoch {epoch + 1} | train loss: {train_loss:.4f} | valid loss: {(epoch_mse / (i + 1)):.4f}')
+            progress_bar.set_description(f'epoch {epoch + 1} | train loss: {train_loss:.4f} | valid loss: {(epoch_mae / (i + 1)):.4f}')
 
             ask_batch_timestamp = time.time()
 
-        avg_mse = epoch_mse / len(iterator)
+        avg_mse = epoch_mae / len(iterator)
         result = np.array(all_predictions)
         return avg_mse, result

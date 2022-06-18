@@ -1,7 +1,9 @@
 import argparse
+import os
 import sys
 from pathlib import Path
 import logging
+import socket
 
 import numpy as np
 import pandas as pd
@@ -370,6 +372,7 @@ def calculate_weights(df):
 
 
 if __name__ == "__main__":
+    print('train.py PID:', os.getpid(), 'hostname:', socket.gethostname())
     args = parse_arguments()
     train_config = TrainingConfig(args)
     aug_config = AugmentationConfig(args.aug_color_prob, args.aug_noise_prob, args.aug_blur_prob)
