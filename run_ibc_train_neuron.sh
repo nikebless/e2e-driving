@@ -12,9 +12,11 @@ nohup python train.py \
     --max-epochs 100 \
     --model-name steering-angle \
     --model-type ibc \
+    --loss ebm \
     --dataset-folder /data/Bolt/dataset-new-small/summer2021 \
     --batch-size 512 \
     --num-workers 16 \
     --wandb-project ibc \
     --stochastic-optimizer-train-samples 32 \
+    --debug \
     &> runs/$(date +%s)-run.txt &
