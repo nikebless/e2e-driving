@@ -4,6 +4,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
+import logging
 
 import cv2
 import numpy as np
@@ -16,7 +17,8 @@ from tqdm.auto import tqdm
 
 from dataloading.nvidia import NvidiaDataset, Normalize
 from pilotnet import PilotNetConditional, PilotnetControl
-from trainer import Trainer, ConditionalTrainer, ControlTrainer
+import trainer as trainers
+import train
 from velocity_model.velocity_model import VelocityModel
 
 
@@ -38,19 +40,22 @@ def create_driving_video(dataset_folder, output_modality):
     print(f"{dataset.name}: output video {output_video_path} created.")
 
 
-def create_prediction_video(dataset_folder, output_modality, model_path, model_type):
+def create_prediction_video(dataset_folder, output_modality, model_path, model_type, config):
     dataset_path = Path(dataset_folder)
-    dataset = NvidiaDataset([dataset_path], name=dataset_path.name, output_modality=output_modality,
-                            n_branches=3, n_waypoints=10)
+    save_path = Path('./')
+    dataset = NvidiaDataset([Path('/data/Bolt/dataset/2021-10-14-13-08-51_e2e_rec_vahi_backwards/')], name=dataset_path.name, output_modality=output_modality,
+                            n_branches=config.n_branches, n_waypoints=10)
 
     #dataset.frames = dataset.frames[9160:23070]
 
-    temp_frames_folder = dataset_path / 'temp'
+    temp_frames_folder = save_path / 'temp'
     shutil.rmtree(temp_frames_folder, ignore_errors=True)
     temp_frames_folder.mkdir()
 
     if output_modality == "steering_angle":
-        steering_predictions = get_steering_predictions(dataset_path, model_path)
+        print('predicting steering...')
+        steering_predictions = get_steering_predictions(dataset_path, model_path, model_type, config)
+        print('predicted steering')
         speed_predictions = get_speed_predictions(dataset)
 
         draw_prediction_frames(dataset, steering_predictions, speed_predictions, temp_frames_folder)
@@ -59,7 +64,7 @@ def create_prediction_video(dataset_folder, output_modality, model_path, model_t
         trajectory = get_trajectory_predictions(dataset_path, model_path, model_type)
         draw_prediction_frames_wp(dataset, trajectory, temp_frames_folder)
 
-    output_video_path = dataset_path / f"{str(Path(model_path).parent.name)}.mp4"
+    output_video_path = save_path / f"{str(Path(model_path).parent.name)}.mp4"
     convert_frames_to_video(temp_frames_folder, output_video_path, fps=30)
 
     shutil.rmtree(temp_frames_folder, ignore_errors=True)
@@ -67,33 +72,36 @@ def create_prediction_video(dataset_folder, output_modality, model_path, model_t
     print(f"{dataset.name}: output video {output_video_path} created.")
 
 
-def get_steering_predictions(dataset_path, model_path):
+def get_steering_predictions(dataset_path, model_path, model_type, config):
     print(f"{dataset_path.name}: steering predictions")
-    trainer = Trainer(None, target_name="steering_angle", n_conditional_branches=3)
+
+    tr = transforms.Compose([Normalize()])
+    # TODO: remove hardcoded path
+    dataset = NvidiaDataset([Path(dataset_path)],
+                            tr, name=dataset_path.name, output_modality="steering_angle", n_branches=3 if model_type == "pilotnet-conditional" else 1,)
+    validloader_tr = torch.utils.data.DataLoader(dataset, batch_size=512, shuffle=False,
+                                         num_workers=16, pin_memory=True, persistent_workers=True)
+
+
     #trainer.force_cpu()  # not enough memory on GPU for parallel processing  # TODO: make input argument
     if model_type == "pilotnet-conditional":
         model = PilotNetConditional(n_branches=3, n_outputs=1)
-        trainer = ConditionalTrainer(None, target_name="steering_angle", n_conditional_branches=3)
+        trainer = trainers.ConditionalTrainer(None, target_name="steering_angle", n_conditional_branches=3)
     elif model_type == "pilotnet-control":
         model = PilotnetControl(n_outputs=1)
-        trainer = ControlTrainer(None, target_name="steering_angle", n_conditional_branches=3)
+        trainer = trainers.ControlTrainer(None, target_name="steering_angle", n_conditional_branches=3)
+    elif model_type == "pilotnet-ebm":
+        trainer = trainers.IbcTrainer(train_conf=config, train_dataloader=validloader_tr)
+        model = trainer.model
     else:
-        print(f"Unknown model type '{args.model_type}'")
+        print(f"Unknown model type '{model_type}'")
         sys.exit()
-
 
     model.load_state_dict(torch.load(model_path))
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
     model.eval()
-
-    tr = transforms.Compose([Normalize()])
-    # TODO: remove hardcoded path
-    dataset = NvidiaDataset([Path(
-        "/home/romet/data2/datasets/rally-estonia/dataset-new-small/summer2021/2021-10-26-10-49-06_e2e_rec_ss20_elva")],
-                            tr, name=dataset_path.name, output_modality="steering_angle", n_branches=3)
-    validloader_tr = torch.utils.data.DataLoader(dataset, batch_size=64, shuffle=False,
-                                         num_workers=16, pin_memory=True, persistent_workers=True)
+    
     steering_predictions = trainer.predict(model, validloader_tr)
     return steering_predictions
 
@@ -104,10 +112,10 @@ def get_trajectory_predictions(dataset_path, model_path, model_type):
     n_outputs = 20
     if model_type == "pilotnet-conditional":
         model = PilotNetConditional(n_branches=3, n_outputs=n_outputs)
-        trainer = ConditionalTrainer(None, target_name="waypoints", n_conditional_branches=3)
+        trainer = trainers.ConditionalTrainer(None, target_name="waypoints", n_conditional_branches=3)
     elif model_type == "pilotnet-control":
         model = PilotnetControl(n_outputs=n_outputs)
-        trainer = ControlTrainer(None, target_name="waypoints", n_conditional_branches=3)
+        trainer = trainers.ControlTrainer(None, target_name="waypoints", n_conditional_branches=3)
     else:
         print(f"Unknown model type '{args.model_type}'")
         sys.exit()
@@ -120,9 +128,9 @@ def get_trajectory_predictions(dataset_path, model_path, model_type):
     tr = transforms.Compose([Normalize()])
     # TODO: remove hardcoded path
     dataset = NvidiaDataset([Path("/home/romet/data2/datasets/rally-estonia/dataset-new-small/summer2021/2021-10-26-10-49-06_e2e_rec_ss20_elva")], tr,
-                            name=dataset_path.name, output_modality="waypoints", n_waypoints=10, n_branches=3)
-    validloader_tr = torch.utils.data.DataLoader(dataset, batch_size=512, shuffle=False,
-                                         num_workers=16, pin_memory=True, persistent_workers=True)
+                            name=dataset_path.name, output_modality="waypoints", n_waypoints=10, n_branches=1)
+    validloader_tr = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False,
+                                         num_workers=1, pin_memory=True, persistent_workers=True)
     waypoints = trainer.predict(model, validloader_tr)
     return waypoints
 
@@ -148,7 +156,7 @@ def draw_steering_angle(frame, steering_angle, steering_wheel_radius, steering_p
     steering_angle_rad = math.radians(steering_angle)
     x = steering_wheel_radius * np.cos(np.pi / 2 + steering_angle_rad)
     y = steering_wheel_radius * np.sin(np.pi / 2 + steering_angle_rad)
-    cv2.circle(frame, (steering_position[0] + int(x), steering_position[1] - int(y)), size, color, thickness=-1)
+    return cv2.circle(frame, (steering_position[0] + int(x), steering_position[1] - int(y)), size, color, thickness=-1)
 
 
 def draw_prediction_frames_wp(dataset, trajectory, temp_frames_folder):
@@ -355,12 +363,86 @@ if __name__ == "__main__":
         '--model-type',
         required=False,
         default="pilotnet",
-        choices=['pilotnet', 'pilotnet-conditional', 'pilotnet-control'],
+        choices=['pilotnet', 'pilotnet-conditional', 'pilotnet-control', 'pilotnet-ebm'],
+    )
+
+    argparser.add_argument(
+        '--model-name',
+        required=False,
+        help='Name of the model used for saving model and logging in W&B.'
+    )
+
+    argparser.add_argument(
+        '--input-modality',
+        required=True,
+        choices=['nvidia-camera', 'nvidia-camera-winter', 'nvidia-camera-all', 'ouster-lidar'],
+    )
+
+    argparser.add_argument(
+        '--lidar-channel',
+        required=False,
+        choices=['ambience', 'intensity', 'range'],
+        help="Lidar channels to use for training. Combined image is used if not provided. "
+             "Only applies to 'ouster-lidar' modality."
+    )
+
+    argparser.add_argument(
+        '--camera-name',
+        required=False,
+        default="front_wide",
+        choices=['front_wide', 'left', 'right', 'all'],
+        help="Camera to use for training. Only applies to 'nvidia-camera' modality."
+    )
+
+    argparser.add_argument(
+        '--num-waypoints',
+        type=int,
+        default=10,
+        help="Number of waypoints used for trajectory."
+    )
+
+    argparser.add_argument(
+        '--batch-size',
+        type=int,
+        default=512,
+        help='Weight decay used in training.'
+    )
+
+    argparser.add_argument(
+        '--num-workers',
+        type=int,
+        default=16,
+        help='Number of workers used for data loading.'
+    )
+
+    argparser.add_argument(
+        '--stochastic-optimizer-inference-samples',
+        type=int,
+        default=2**10, 
+        help='Number of samples used for test-time EBM inference.'
+    )
+
+    argparser.add_argument(
+        '--debug',
+        action='store_true',
+        help='When true, debug mode is enabled.'
     )
 
     args = argparser.parse_args()
     dataset_folder = args.dataset_folder
     video_type = args.video_type
+    args.learning_rate = 0
+    args.weight_decay = 0
+    args.patience = 0
+    args.max_epochs = 0
+    args.batch_sampler = None
+    args.wandb_project = ''
+    args.loss = None
+    args.loss_discount_rate = 0
+    args.stochastic_optimizer_train_samples = 0
+    args.pretrained_model = False
+
+    conf = train.TrainingConfig(args)
     model_path = args.model_path
     model_type = args.model_type
     print("Creating video from: ", dataset_folder)
@@ -368,4 +450,4 @@ if __name__ == "__main__":
     if video_type == 'driving':
         create_driving_video(dataset_folder, args.output_modality)
     elif video_type == 'prediction':
-        create_prediction_video(dataset_folder, args.output_modality, model_path=model_path, model_type=model_type)
+        create_prediction_video(dataset_folder, args.output_modality, model_path=model_path, model_type=model_type, config=conf)

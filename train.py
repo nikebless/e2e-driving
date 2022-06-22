@@ -31,7 +31,7 @@ def parse_arguments():
     argparser.add_argument(
         '--model-type',
         required=True,
-        choices=['pilotnet', 'pilotnet-conditional', 'pilotnet-control', 'efficientnet', 'ibc'],
+        choices=['pilotnet', 'pilotnet-conditional', 'pilotnet-control', 'efficientnet', 'pilotnet-ebm'],
         help='Defines which model will be trained.'
     )
 
@@ -271,7 +271,7 @@ def train_model(model_name, train_conf, augment_conf):
         trainer = trainers.ConditionalTrainer(model_name=model_name, train_conf=train_conf)
     elif train_conf.model_type == "efficientnet":
         trainer = trainers.PilotNetTrainer(model_name=model_name, train_conf=train_conf)
-    elif train_conf.model_type == "ibc":
+    elif train_conf.model_type == "pilotnet-ebm":
         trainer = trainers.IbcTrainer(model_name=model_name, train_conf=train_conf, train_dataloader=train_loader)
     else:
         trainer = trainers.ConditionalTrainer(model_name=model_name, train_conf=train_conf)

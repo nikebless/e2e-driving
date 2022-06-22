@@ -53,35 +53,36 @@ class Trainer:
         self.n_conditional_branches = train_conf.n_branches
         self.wandb_logging = False
 
-        weights = torch.FloatTensor([(train_conf.loss_discount_rate ** i, train_conf.loss_discount_rate ** i)
-                                     for i in range(train_conf.n_waypoints)]).to(self.device)
-        weights = weights.flatten()
-        if train_conf.n_branches > 1:  # todo: this is conditional learning specific and should be handled there
-            weights = torch.cat(tuple(weights for i in range(train_conf.n_branches)), 0)
+        if train_conf.loss: # loss is not None, hence we're in training mode
+            weights = torch.FloatTensor([(train_conf.loss_discount_rate ** i, train_conf.loss_discount_rate ** i)
+                                        for i in range(train_conf.n_waypoints)]).to(self.device)
+            weights = weights.flatten()
+            if train_conf.n_branches > 1:  # todo: this is conditional learning specific and should be handled there
+                weights = torch.cat(tuple(weights for i in range(train_conf.n_branches)), 0)
 
-        if train_conf.loss == "mse":
-            self.criterion = MSELoss()
-        elif train_conf.loss == "mae":
-            self.criterion = L1Loss()
-        elif train_conf.loss == "mse-weighted":
-            self.criterion = WeighedMSELoss(weights)
-        elif train_conf.loss == "mae-weighted":
-            self.criterion = WeighedL1Loss(weights)
-        elif train_conf.loss == "ebm":
-            # MAE will be used in evaluation
-            self.criterion = CrossEntropyLoss()
-        else:
-            print(f"Uknown loss function {train_conf.loss}")
-            sys.exit()
+            if train_conf.loss == "mse":
+                self.criterion = MSELoss()
+            elif train_conf.loss == "mae":
+                self.criterion = L1Loss()
+            elif train_conf.loss == "mse-weighted":
+                self.criterion = WeighedMSELoss(weights)
+            elif train_conf.loss == "mae-weighted":
+                self.criterion = WeighedL1Loss(weights)
+            elif train_conf.loss == "ebm":
+                # MAE will be used in evaluation
+                self.criterion = CrossEntropyLoss()
+            else:
+                print(f"Uknown loss function {train_conf.loss}")
+                sys.exit()
 
-        if train_conf.wandb_project:
-            self.wandb_logging = True
-            # wandb.init(project=wandb_project)
+            if train_conf.wandb_project:
+                self.wandb_logging = True
+                # wandb.init(project=wandb_project)
 
-        if model_name:
-            datetime_prefix = datetime.today().strftime('%Y%m%d%H%M%S')
-            self.save_dir = Path("models") / f"{datetime_prefix}_{model_name}"
-            self.save_dir.mkdir(parents=True, exist_ok=False)
+            if model_name:
+                datetime_prefix = datetime.today().strftime('%Y%m%d%H%M%S')
+                self.save_dir = Path("models") / f"{datetime_prefix}_{model_name}"
+                self.save_dir.mkdir(parents=True, exist_ok=False)
 
     def force_cpu(self):
         self.device = 'cpu'
@@ -412,26 +413,27 @@ class ConditionalTrainer(Trainer):
 
 class IbcTrainer(Trainer):
 
-    def __init__(self, train_dataloader, *args, **kwargs):
+    def __init__(self, train_dataloader=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-        optim_config, stochastic_optim_config = self._initialize_config(kwargs['train_conf'], train_dataloader)
 
         self.model = IbcPilotNet()
         self.model.to(self.device)
 
-        self.optimizer = torch.optim.Adam(
-            self.model.parameters(),
-            lr=optim_config.learning_rate,
-            weight_decay=optim_config.weight_decay,
-            betas=(optim_config.beta1, optim_config.beta2),
-        )
+        optim_config, stochastic_optim_config = self._initialize_config(kwargs['train_conf'], train_dataloader)
 
-        self.scheduler = torch.optim.lr_scheduler.StepLR(
-            self.optimizer,
-            step_size=optim_config.lr_scheduler_step,
-            gamma=optim_config.lr_scheduler_gamma,
-        )
+        if isinstance(kwargs['train_conf'], train.TrainingConfig):
+            self.optimizer = torch.optim.Adam(
+                self.model.parameters(),
+                lr=optim_config.learning_rate,
+                weight_decay=optim_config.weight_decay,
+                betas=(optim_config.beta1, optim_config.beta2),
+            )
+
+            self.scheduler = torch.optim.lr_scheduler.StepLR(
+                self.optimizer,
+                step_size=optim_config.lr_scheduler_step,
+                gamma=optim_config.lr_scheduler_gamma,
+            )
 
         self.stochastic_optimizer = optimizers.DerivativeFreeOptimizer.initialize(
             stochastic_optim_config,
@@ -443,10 +445,11 @@ class IbcTrainer(Trainer):
     def _initialize_config(self, train_conf, train_dataloader):
         """Initialize train state based on config values."""
 
-        optim_config = optimizers.OptimizerConfig(
-            learning_rate=train_conf.learning_rate,
-            weight_decay=train_conf.weight_decay,
-        )
+        if isinstance(train_conf, train.TrainingConfig):
+            optim_config = optimizers.OptimizerConfig(
+                learning_rate=train_conf.learning_rate,
+                weight_decay=train_conf.weight_decay,
+            )
 
         target_bounds = train_dataloader.dataset.get_target_bounds()
         stochastic_optim_config = optimizers.DerivativeFreeConfig(
@@ -466,7 +469,7 @@ class IbcTrainer(Trainer):
             progress_bar.set_description("Model predictions")
             for i, (data, target_values, condition_mask) in enumerate(dataloader):
                 inputs = data['image'].to(self.device)
-                predictions = model(inputs)
+                predictions = self.stochastic_optimizer.infer(inputs, model)
                 all_predictions.extend(predictions.cpu().squeeze().numpy())
                 progress_bar.update(1)
 
