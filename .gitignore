@@ -7,3 +7,4 @@ __pycache__
 !/models/lidar-camera-paper/
 !/models/lidar-camera-paper/*
 /experiments/
+/runs/
