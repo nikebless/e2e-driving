@@ -32,7 +32,7 @@ class OptimizerConfig:
 
 @dataclasses.dataclass
 class StochasticOptimizerConfig:
-    bounds: np.ndarray
+    bounds: torch.tensor
     """Bounds on the samples, min/max for each dimension."""
 
     iters: int
@@ -76,7 +76,7 @@ class DerivativeFreeOptimizer:
     iters: int
     train_samples: int
     inference_samples: int
-    bounds: np.ndarray
+    bounds: torch.tensor
 
     @staticmethod
     def initialize(
@@ -92,11 +92,18 @@ class DerivativeFreeOptimizer:
             bounds=config.bounds,
         )
 
+    def to(self, device):
+        self.device = device
+        self.bounds = self.bounds.to(device)
+        return self
+
     def _sample(self, num_samples: int) -> torch.Tensor:
         """Helper method for drawing samples from the uniform random distribution."""
+        lower = self.bounds[0, :]
+        upper = self.bounds[1, :]
         size = (num_samples, self.bounds.shape[1])
-        samples = np.random.uniform(self.bounds[0, :], self.bounds[1, :], size=size)
-        return torch.as_tensor(samples, dtype=torch.float32, device=self.device)
+        samples = (lower - upper) * torch.rand(size, device=self.device) + upper
+        return samples
 
     def sample(self, batch_size: int, ebm: nn.Module) -> torch.Tensor:
         del ebm  # The derivative-free optimizer does not use the ebm for sampling.
@@ -107,8 +114,7 @@ class DerivativeFreeOptimizer:
     def infer(self, x: torch.Tensor, ebm: nn.Module) -> torch.Tensor:
         """Optimize for the best action given a trained EBM."""
         noise_scale = self.noise_scale
-        bounds = torch.as_tensor(self.bounds).to(self.device)
-
+        bounds = self.bounds
 
         logging.debug(f'x: {x.shape}')
         samples = self._sample(x.size(0) * self.inference_samples)
@@ -123,7 +129,7 @@ class DerivativeFreeOptimizer:
 
             # Resample with replacement.
             idxs = torch.multinomial(probs, self.inference_samples, replacement=True)
-            samples = samples[torch.arange(samples.size(0)).unsqueeze(-1), idxs]
+            samples = samples[torch.arange(samples.size(0))[..., None], idxs]
 
             # Add noise and clip to target bounds.
             samples = samples + torch.randn_like(samples) * noise_scale
