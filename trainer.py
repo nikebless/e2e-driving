@@ -19,7 +19,7 @@ import logging
 from metrics.metrics import calculate_open_loop_metrics, calculate_trajectory_open_loop_metrics
 
 from ibc import optimizers
-from pilotnet import PilotNetConditional, PilotnetControl, IbcPilotNet
+from pilotnet import PilotNet, PilotNetConditional, PilotnetControl, IbcPilotNet
 from efficient_net import effnetv2_s
 
 import train
@@ -243,7 +243,7 @@ class Trainer:
 
             loss.backward()
             optimizer.step()
-            if self.scheduler:
+            if hasattr(self, 'scheduler'):
                 self.scheduler.step()
 
             running_loss += loss.item()
@@ -289,6 +289,41 @@ class Trainer:
 
 
 class PilotNetTrainer(Trainer):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        train_conf = kwargs['train_conf']
+
+        self.model = PilotNet(train_conf.n_input_channels)
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=train_conf.learning_rate, betas=(0.9, 0.999),
+                                           eps=1e-08, weight_decay=train_conf.weight_decay, amsgrad=False)
+        self.model = self.model.to(self.device)
+        self.criterion = self.criterion.to(self.device)
+
+    def predict(self, model, dataloader):
+        all_predictions = []
+        model.eval()
+
+        with torch.no_grad():
+            progress_bar = tqdm(total=len(dataloader), smoothing=0)
+            progress_bar.set_description("Model predictions")
+            for i, (data, target_values, condition_mask) in enumerate(dataloader):
+                inputs = data['image'].to(self.device)
+                predictions = model(inputs)
+                all_predictions.extend(predictions.cpu().squeeze().numpy())
+                progress_bar.update(1)
+
+        return np.array(all_predictions)
+
+    def train_batch(self, model, data, target_values, condition_mask, criterion):
+        inputs = data['image'].to(self.device)
+        target_values = target_values.to(self.device)
+        predictions = model(inputs)
+        return predictions, criterion(predictions, target_values)
+
+
+class EfficientNetTrainer(Trainer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

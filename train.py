@@ -265,12 +265,14 @@ def train_model(model_name, train_conf, augment_conf):
 
     train_loader, valid_loader = load_data(train_conf, augment_conf)
 
-    if train_conf.model_type == "pilotnet-control":
+    if train_conf.model_type == 'pilotnet':
+        trainer = trainers.PilotNetTrainer(model_name=model_name, train_conf=train_conf)
+    elif train_conf.model_type == "pilotnet-control":
         trainer = trainers.ControlTrainer(model_name=model_name, train_conf=train_conf)
     elif train_conf.model_type == "pilotnet-conditional":
         trainer = trainers.ConditionalTrainer(model_name=model_name, train_conf=train_conf)
     elif train_conf.model_type == "efficientnet":
-        trainer = trainers.PilotNetTrainer(model_name=model_name, train_conf=train_conf)
+        trainer = trainers.EfficientNetTrainer(model_name=model_name, train_conf=train_conf)
     elif train_conf.model_type == "pilotnet-ebm":
         trainer = trainers.IbcTrainer(model_name=model_name, train_conf=train_conf, train_dataloader=train_loader)
     else:
