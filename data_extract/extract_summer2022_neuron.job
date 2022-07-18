@@ -1,0 +1,15 @@
+#!/bin/bash
+TASK_ID=$1
+BAGS_DIR=/data/Bolt/bagfiles/
+BAGS=(
+    '2022-07-08-14-37-41_test_vahi_autumnv3_conda_env_python38_ort.bag' \
+    '2022-07-08-15-17-39_test_vahi_autumnv3_global_env_python36_ort.bag' \
+    '2022-07-08-15-41-41_test_vahi_autumnv3_global_env_python27_trt.bag' \
+    '2022-07-08-16-00-49_test_vahi_autumnv3_global_env_python27_trt.bag' \
+    '2022-07-11-14-52-01_test_vahi_ibc_dfo_drop_frames_messy.bag' \
+    '2022-07-11-15-07-09_test_vahi_vanilla_pilotnet_drop_frames.bag' \
+    '2022-07-11-15-22-50_test_vahi_ibc_dfo_drop_frames.bag' \
+    '2022-07-11-15-38-12_test_vahi_ibc_dfo_best_but_not_really_drop_frames.bag' \
+    )
+
+bash ./extract_neuron.sh ${BAGS[$TASK_ID]} /data/Bolt/drives-nikita-thesis/
