@@ -481,7 +481,7 @@ class EBMTrainer(Trainer):
             weight_decay=train_conf.weight_decay,
         )
 
-        target_bounds = train_dataloader.dataset.get_target_bounds()
+        target_bounds = train_dataloader.dataset.get_target_bounds().to(self.device)
         stochastic_optim_config = optimizers.DerivativeFreeConfig(
             bounds=target_bounds,
             train_samples=train_conf.stochastic_optimizer_train_samples,
@@ -515,7 +515,7 @@ class EBMTrainer(Trainer):
         logging.debug(f'target: {target.shape} {target.dtype}')
 
         # Generate N negatives, one for each element in the batch: (B, N, D).
-        negatives = self.stochastic_optimizer.sample(inputs.size(0), self.model)
+        negatives = self.stochastic_optimizer.sample(inputs.size(0))
 
         # Merge target and negatives: (B, N+1, D).
         targets = torch.cat([target.unsqueeze(dim=1), negatives], dim=1)

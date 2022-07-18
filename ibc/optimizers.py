@@ -88,17 +88,17 @@ class DerivativeFreeOptimizer:
             bounds=config.bounds,
         )
 
-    def _sample(self, num_samples: int, device: torch.device) -> torch.Tensor:
+    def _sample(self, num_samples: int) -> torch.Tensor:
         """Helper method for drawing samples from the uniform random distribution."""
-        bounds = self.bounds.to(device)
+        bounds = self.bounds
         lower = bounds[0, :]
         upper = bounds[1, :]
         size = (num_samples, bounds.shape[1])
-        samples = (lower - upper) * torch.rand(size, device=device) + upper
+        samples = (lower - upper) * torch.rand(size, device=bounds.device) + upper
         return samples
 
-    def sample(self, batch_size: int, ebm: nn.Module) -> torch.Tensor:
-        samples = self._sample(batch_size * self.train_samples, ebm.device)
+    def sample(self, batch_size: int) -> torch.Tensor:
+        samples = self._sample(batch_size * self.train_samples)
         return samples.reshape(batch_size, self.train_samples, -1)
 
     @torch.no_grad()
@@ -108,7 +108,7 @@ class DerivativeFreeOptimizer:
         bounds = self.bounds
 
         logging.debug(f'x: {x.shape}')
-        samples = self._sample(x.size(0) * self.inference_samples, ebm.device)
+        samples = self._sample(x.size(0) * self.inference_samples)
         logging.debug(f'samples: {samples.shape}')
         samples = samples.reshape(x.size(0), self.inference_samples, -1)
         logging.debug(f'samples reshaped: {samples.shape}')
@@ -144,11 +144,12 @@ class StochasticOptimizerType(enum.Enum):
 if __name__ == "__main__":
     from dataset import CoordinateRegression, DatasetConfig
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataset = CoordinateRegression(DatasetConfig(dataset_size=10))
-    bounds = dataset.get_target_bounds()
+    bounds = dataset.get_target_bounds().to(device)
 
     config = DerivativeFreeConfig(bounds=bounds, train_samples=256)
     so = DerivativeFreeOptimizer.initialize(config)
 
-    negatives = so.sample(64, nn.Identity())
+    negatives = so.sample(64)
     assert negatives.shape == (64, config.train_samples, bounds.shape[1])
