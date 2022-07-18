@@ -29,12 +29,8 @@ def save_model_to_onnx(model_path, data_loader, output_path, with_optimization, 
             iters=iters,
         )
         model = optimizers.DerivativeFreeOptimizer(model, stochastic_optim_config)
-        state_dict = torch.load(model_path)
-        state_dict = {'ebm.' + k: v for k,v in state_dict.items()}
-        model.load_state_dict(state_dict)
-    else:
-        model.load_state_dict(torch.load(model_path))
 
+    model.load_state_dict(torch.load(model_path))
     model.to(device)
 
     inputs, _, _ = iter(data_loader).next()

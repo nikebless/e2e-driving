@@ -42,6 +42,10 @@ class DerivativeFreeOptimizer(nn.Module):
         self.inference_samples = config.inference_samples
         self.bounds = config.bounds
 
+    def load_state_dict(self, state_dict: dict) -> None:
+        state_dict = {'ebm.' + k: v for k,v in state_dict.items()}
+        super().load_state_dict(state_dict)
+
     def _sample(self, num_samples: int) -> torch.Tensor:
         """Drawing samples from the uniform random distribution."""
         bounds = self.bounds
