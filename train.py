@@ -282,7 +282,7 @@ def train_model(model_name, train_conf, augment_conf):
     elif train_conf.model_type == "efficientnet":
         trainer = trainers.EfficientNetTrainer(model_name=model_name, train_conf=train_conf)
     elif train_conf.model_type == "pilotnet-ebm":
-        trainer = trainers.IbcTrainer(model_name=model_name, train_conf=train_conf, train_dataloader=train_loader)
+        trainer = trainers.EBMTrainer(model_name=model_name, train_conf=train_conf, train_dataloader=train_loader)
     else:
         trainer = trainers.ConditionalTrainer(model_name=model_name, train_conf=train_conf)
 

@@ -158,7 +158,7 @@ class PilotnetControl(nn.Module):
         return x
 
 
-class IbcPilotNet(nn.Module):
+class PilotnetEBM(nn.Module):
     """
     PilotNet with action candidates (Implicit Behavior Cloning)
     https://implicitbc.github.io/
@@ -201,6 +201,10 @@ class IbcPilotNet(nn.Module):
         )
 
         logging.debug(f'model regressor: {self.regressor}')
+
+    @property
+    def device(self):
+        return next(self.parameters()).device
 
     def forward(self, x, y):
         logging.debug(f'x: {x.shape} {x.dtype}')

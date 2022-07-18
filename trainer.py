@@ -19,7 +19,7 @@ import logging
 from metrics.metrics import calculate_open_loop_metrics, calculate_trajectory_open_loop_metrics
 
 from ibc import optimizers
-from pilotnet import PilotNet, PilotNetConditional, PilotnetControl, IbcPilotNet
+from pilotnet import PilotNet, PilotNetConditional, PilotnetControl, PilotnetEBM
 from efficient_net import effnetv2_s
 
 import train
@@ -446,49 +446,40 @@ class ConditionalTrainer(Trainer):
         return masked_predictions.reshape(predictions.shape[0], -1), loss
 
 
-class IbcTrainer(Trainer):
+class EBMTrainer(Trainer):
 
     def __init__(self, train_dataloader=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.model = IbcPilotNet()
+        self.model = PilotnetEBM()
         self.model.to(self.device)
 
         optim_config, stochastic_optim_config = self._initialize_config(kwargs['train_conf'], train_dataloader)
 
-        print('train_conf', type(kwargs['train_conf']), kwargs['train_conf'])
-
-        if isinstance(kwargs['train_conf'], train.TrainingConfig):
-            self.optimizer = torch.optim.Adam(
-                self.model.parameters(),
-                lr=optim_config.learning_rate,
-                weight_decay=optim_config.weight_decay,
-                betas=(optim_config.beta1, optim_config.beta2),
-            )
-
-            self.scheduler = torch.optim.lr_scheduler.StepLR(
-                self.optimizer,
-                step_size=optim_config.lr_scheduler_step,
-                gamma=optim_config.lr_scheduler_gamma,
-            )
-
-        self.stochastic_optimizer = optimizers.DerivativeFreeOptimizer.initialize(
-            stochastic_optim_config,
-            self.device,
+        self.optimizer = torch.optim.Adam(
+            self.model.parameters(),
+            lr=optim_config.learning_rate,
+            weight_decay=optim_config.weight_decay,
+            betas=(optim_config.beta1, optim_config.beta2),
         )
+
+        self.scheduler = torch.optim.lr_scheduler.StepLR(
+            self.optimizer,
+            step_size=optim_config.lr_scheduler_step,
+            gamma=optim_config.lr_scheduler_gamma,
+        )
+
+        self.stochastic_optimizer = optimizers.DerivativeFreeOptimizer.initialize(stochastic_optim_config)
 
         self.steps = 0
 
     def _initialize_config(self, train_conf, train_dataloader):
         """Initialize train state based on config values."""
 
-        if isinstance(train_conf, train.TrainingConfig):
-            optim_config = optimizers.OptimizerConfig(
-                learning_rate=train_conf.learning_rate,
-                weight_decay=train_conf.weight_decay,
-            )
-        else:
-            optim_config = None
+        optim_config = optimizers.OptimizerConfig(
+            learning_rate=train_conf.learning_rate,
+            weight_decay=train_conf.weight_decay,
+        )
 
         target_bounds = train_dataloader.dataset.get_target_bounds()
         stochastic_optim_config = optimizers.DerivativeFreeConfig(
@@ -515,6 +506,7 @@ class IbcTrainer(Trainer):
 
         return np.array(all_predictions)
 
+    # adopted from https://github.com/kevinzakka/ibc
     def train_batch(self, _, input, target, __, ___):
         inputs = input['image'].to(self.device)
         target = target.to(self.device, torch.float32)

@@ -48,8 +48,6 @@ class StochasticOptimizerConfig:
 class StochasticOptimizer(Protocol):
     """Functionality that needs to be implemented by all stochastic optimizers."""
 
-    device: torch.device
-
     def sample(self, batch_size: int, ebm: nn.Module) -> torch.Tensor:
         """Sample counter-negatives for feeding to the InfoNCE objective."""
 
@@ -70,7 +68,6 @@ class DerivativeFreeConfig(StochasticOptimizerConfig):
 class DerivativeFreeOptimizer:
     """A simple derivative-free optimizer. Great for up to 5 dimensions."""
 
-    device: torch.device
     noise_scale: float
     noise_shrink: float
     iters: int
@@ -80,10 +77,9 @@ class DerivativeFreeOptimizer:
 
     @staticmethod
     def initialize(
-        config: DerivativeFreeConfig, device: str
+        config: DerivativeFreeConfig
     ) -> DerivativeFreeOptimizer:
         return DerivativeFreeOptimizer(
-            device=device,
             noise_scale=config.noise_scale,
             noise_shrink=config.noise_shrink,
             iters=config.iters,
@@ -92,22 +88,17 @@ class DerivativeFreeOptimizer:
             bounds=config.bounds,
         )
 
-    def to(self, device):
-        self.device = device
-        self.bounds = self.bounds.to(device)
-        return self
-
-    def _sample(self, num_samples: int) -> torch.Tensor:
+    def _sample(self, num_samples: int, device: torch.device) -> torch.Tensor:
         """Helper method for drawing samples from the uniform random distribution."""
-        lower = self.bounds[0, :]
-        upper = self.bounds[1, :]
-        size = (num_samples, self.bounds.shape[1])
-        samples = (lower - upper) * torch.rand(size, device=self.device) + upper
+        bounds = self.bounds.to(device)
+        lower = bounds[0, :]
+        upper = bounds[1, :]
+        size = (num_samples, bounds.shape[1])
+        samples = (lower - upper) * torch.rand(size, device=device) + upper
         return samples
 
     def sample(self, batch_size: int, ebm: nn.Module) -> torch.Tensor:
-        del ebm  # The derivative-free optimizer does not use the ebm for sampling.
-        samples = self._sample(batch_size * self.train_samples)
+        samples = self._sample(batch_size * self.train_samples, ebm.device)
         return samples.reshape(batch_size, self.train_samples, -1)
 
     @torch.no_grad()
@@ -117,7 +108,7 @@ class DerivativeFreeOptimizer:
         bounds = self.bounds
 
         logging.debug(f'x: {x.shape}')
-        samples = self._sample(x.size(0) * self.inference_samples)
+        samples = self._sample(x.size(0) * self.inference_samples, ebm.device)
         logging.debug(f'samples: {samples.shape}')
         samples = samples.reshape(x.size(0), self.inference_samples, -1)
         logging.debug(f'samples reshaped: {samples.shape}')
@@ -157,7 +148,7 @@ if __name__ == "__main__":
     bounds = dataset.get_target_bounds()
 
     config = DerivativeFreeConfig(bounds=bounds, train_samples=256)
-    so = DerivativeFreeOptimizer.initialize(config, "cuda")
+    so = DerivativeFreeOptimizer.initialize(config)
 
     negatives = so.sample(64, nn.Identity())
     assert negatives.shape == (64, config.train_samples, bounds.shape[1])
