@@ -456,6 +456,8 @@ class IbcTrainer(Trainer):
 
         optim_config, stochastic_optim_config = self._initialize_config(kwargs['train_conf'], train_dataloader)
 
+        print('train_conf', type(kwargs['train_conf']), kwargs['train_conf'])
+
         if isinstance(kwargs['train_conf'], train.TrainingConfig):
             self.optimizer = torch.optim.Adam(
                 self.model.parameters(),
@@ -485,12 +487,15 @@ class IbcTrainer(Trainer):
                 learning_rate=train_conf.learning_rate,
                 weight_decay=train_conf.weight_decay,
             )
+        else:
+            optim_config = None
 
         target_bounds = train_dataloader.dataset.get_target_bounds()
         stochastic_optim_config = optimizers.DerivativeFreeConfig(
             bounds=target_bounds,
             train_samples=train_conf.stochastic_optimizer_train_samples,
             inference_samples=train_conf.stochastic_optimizer_inference_samples,
+            iters=train_conf.stochastic_optimizer_iters,
         )
 
         return optim_config, stochastic_optim_config

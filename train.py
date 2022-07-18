@@ -200,6 +200,13 @@ def parse_arguments():
     )
 
     argparser.add_argument(
+        '--stochastic-optimizer-iters',
+        type=int,
+        default=3, 
+        help='Number of DFO iterations used for test-time EBM inference.'
+    )
+
+    argparser.add_argument(
         '--debug',
         action='store_true',
         help='When true, debug mode is enabled.'
@@ -229,6 +236,7 @@ class TrainingConfig:
         self.loss_discount_rate = args.loss_discount_rate
         self.stochastic_optimizer_train_samples = args.stochastic_optimizer_train_samples
         self.stochastic_optimizer_inference_samples = args.stochastic_optimizer_inference_samples
+        self.stochastic_optimizer_iters = args.stochastic_optimizer_iters
         self.debug = args.debug
 
         log_format = "%(message)s"
