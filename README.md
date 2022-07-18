@@ -35,10 +35,6 @@ Environment can set up using conda by following commands:
 conda create -n e2e pytorch torchvision cudatoolkit=11.1 jupyter pandas matplotlib tqdm scikit-learn scikit-image onnx seaborn -c pytorch -c nvidia
 conda activate e2e
 
-# Install TensorRT and pycuda
-pip install nvidia-tensorrt==7.2.3.4
-pip install 'pycuda<2021.1'
-
 # Wandb
 pip install wandb
 

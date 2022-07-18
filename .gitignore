@@ -1,5 +1,5 @@
 /output/
-/wandb/
+wandb
 /.ipynb_checkpoints/
 /notebooks/.ipynb_checkpoints/
 __pycache__
