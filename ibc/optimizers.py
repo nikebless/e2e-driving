@@ -25,7 +25,7 @@ class DerivativeFreeConfig:
     iters: int = 3
     train_samples: int = 256
     inference_samples: int = 2 ** 14
-    bounds: torch.Tensor = torch.tensor([[-1.], [1.]])
+    bounds: torch.Tensor = torch.tensor([[-8.], [8.]])
 
 
 class DerivativeFreeOptimizer(nn.Module):
