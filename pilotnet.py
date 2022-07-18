@@ -218,5 +218,7 @@ class PilotnetEBM(nn.Module):
         fused = fused.reshape(B * N, D)
         logging.debug(f'fused (reshaped): {fused.shape} {fused.dtype}')
         out = self.regressor(fused)
+        logging.debug(f'regressor output: {out.shape} {out.dtype}')
+        out = out.view(B, N)
         logging.debug(f'output: {out.shape} {out.dtype}')
-        return out.view(B, N)
+        return out

@@ -5,23 +5,36 @@ from pathlib import Path
 import argparse
 
 import torch
-import torch.nn as nn
 import onnx
 import numpy as np
 
 
 from ibc import optimizers
 from dataloading.nvidia import NvidiaValidationDataset
+from pilotnet import PilotnetEBM
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def save_model_to_onnx(model_path, data_loader, output_path, with_optimization, n_samples, iters):
+def save_model_to_onnx(model_path, data_loader, output_path, with_optimization, n_samples, iters, bounds):
     action_bounds = data_loader.dataset.get_target_bounds()
     batch_size = data_loader.batch_size
 
-    model = PilotnetEBMWithDFO(n_samples, iters) if with_optimization else PilotnetEBMPure()
-    model.load_state_dict(torch.load(model_path))
+    model = PilotnetEBM()
+    if with_optimization:
+        stochastic_optim_config = optimizers.DerivativeFreeConfig(
+            bounds=torch.tensor([[-bounds], [bounds]]),
+            train_samples=0,
+            inference_samples=n_samples,
+            iters=iters,
+        )
+        model = optimizers.DerivativeFreeOptimizer(model, stochastic_optim_config)
+        state_dict = torch.load(model_path)
+        state_dict = {'ebm.' + k: v for k,v in state_dict.items()}
+        model.load_state_dict(state_dict)
+    else:
+        model.load_state_dict(torch.load(model_path))
+
     model.to(device)
 
     inputs, _, _ = iter(data_loader).next()
@@ -67,151 +80,7 @@ def get_loader(batch_size=1, dataset_path='/data/Bolt/dataset-new-small/summer20
     return valid_loader
 
 
-class PilotnetEBMWithDFO(nn.Module):
-    """
-    PilotNet with action candidates (Implicit Behavior Cloning)
-    https://implicitbc.github.io/
-    """
-
-    def __init__(self, samples=1024, iters=3, output_modality='steering_angle', n_input_channels=3):
-        super().__init__()
-
-        self.output_modality = output_modality
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-        self.features = nn.Sequential(
-            nn.Conv2d(n_input_channels, 24, 5, stride=2),
-            nn.BatchNorm2d(24),
-            nn.LeakyReLU(),
-            nn.Conv2d(24, 36, 5, stride=2),
-            nn.BatchNorm2d(36),
-            nn.LeakyReLU(),
-            nn.Conv2d(36, 48, 5, stride=2),
-            nn.BatchNorm2d(48),
-            nn.LeakyReLU(),
-            nn.Conv2d(48, 64, 3, stride=1),
-            nn.BatchNorm2d(64),
-            nn.LeakyReLU(),
-            nn.Conv2d(64, 64, 3, stride=1),
-            nn.BatchNorm2d(64),
-            nn.LeakyReLU(),
-            nn.Flatten()
-        )
-
-        self.regressor = nn.Sequential(
-            nn.Linear(1664+1, 100), # plus one for target candidate
-            nn.BatchNorm1d(100),
-            nn.LeakyReLU(),
-            nn.Linear(100, 50),
-            nn.BatchNorm1d(50),
-            nn.LeakyReLU(),
-            nn.Linear(50, 10),
-            nn.LeakyReLU(),
-            nn.Linear(10, 1),
-        )
-
-        stochastic_optim_config = optimizers.DerivativeFreeConfig(
-            bounds=self.get_target_bounds(),
-            train_samples=0,
-            inference_samples=samples,
-            iters=iters,
-        )
-        
-        self.stochastic_optimizer = optimizers.DerivativeFreeOptimizer.initialize(stochastic_optim_config)
-
-    def get_target_bounds(self):
-        return {
-            "steering_angle":  torch.tensor([[-8.0], [8.0]]), # radians for ±450 degrees steering wheel rotation
-            "waypoints":       NotImplemented,
-        }[self.output_modality]
-
-    def _forward(self, x, y):
-        logging.debug(f'x: {x.shape} {x.dtype}')
-        logging.debug(f'y: {y.shape} {y.dtype}')
-        out = self.features(x)
-        logging.debug(f'after features(): {out.shape} {out.dtype}')
-        fused = torch.cat([out.unsqueeze(1).expand(-1, y.size(1), -1), y], dim=-1)
-        logging.debug(f'fused: {fused.shape} {fused.dtype}')
-        B, N, D = fused.size()
-        logging.debug(f'B, N, D: {B} {N} {D}')
-        fused = fused.reshape(B * N, D)
-        logging.debug(f'fused (reshaped): {fused.shape} {fused.dtype}')
-        out = self.regressor(fused)
-        logging.debug(f'regressor output: {out.shape} {out.dtype}')
-        out = out.view(B, N)
-        logging.debug(f'output: {out.shape} {out.dtype}')
-        return out
-
-    def forward(self, inputs):
-        return self.stochastic_optimizer.infer(inputs, self._forward)
-
-
-class PilotnetEBMPure(nn.Module):
-    """
-    PilotNet with action candidates (Implicit Behavior Cloning)
-    https://implicitbc.github.io/
-    """
-
-    def __init__(self, output_modality='steering_angle', n_input_channels=3):
-        super().__init__()
-
-        self.output_modality = output_modality
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-        self.features = nn.Sequential(
-            nn.Conv2d(n_input_channels, 24, 5, stride=2),
-            nn.BatchNorm2d(24),
-            nn.LeakyReLU(),
-            nn.Conv2d(24, 36, 5, stride=2),
-            nn.BatchNorm2d(36),
-            nn.LeakyReLU(),
-            nn.Conv2d(36, 48, 5, stride=2),
-            nn.BatchNorm2d(48),
-            nn.LeakyReLU(),
-            nn.Conv2d(48, 64, 3, stride=1),
-            nn.BatchNorm2d(64),
-            nn.LeakyReLU(),
-            nn.Conv2d(64, 64, 3, stride=1),
-            nn.BatchNorm2d(64),
-            nn.LeakyReLU(),
-            nn.Flatten()
-        )
-
-        self.regressor = nn.Sequential(
-            nn.Linear(1664+1, 100), # plus one for target candidate
-            nn.BatchNorm1d(100),
-            nn.LeakyReLU(),
-            nn.Linear(100, 50),
-            nn.BatchNorm1d(50),
-            nn.LeakyReLU(),
-            nn.Linear(50, 10),
-            nn.LeakyReLU(),
-            nn.Linear(10, 1),
-        )
-
-    def forward(self, x, y):
-        logging.debug(f'x: {x.shape} {x.dtype}')
-        logging.debug(f'y: {y.shape} {y.dtype}')
-        out = self.features(x)
-        logging.debug(f'after features(): {out.shape} {out.dtype}')
-        fused = torch.cat([out.unsqueeze(1).expand(-1, y.size(1), -1), y], dim=-1)
-        logging.debug(f'fused: {fused.shape} {fused.dtype}')
-        B, N, D = fused.size()
-        logging.debug(f'B, N, D: {B} {N} {D}')
-        fused = fused.reshape(B * N, D)
-        logging.debug(f'fused (reshaped): {fused.shape} {fused.dtype}')
-        out = self.regressor(fused)
-        logging.debug(f'regressor output: {out.shape} {out.dtype}')
-        out = out.view(B, N)
-        logging.debug(f'output: {out.shape} {out.dtype}')
-        return out
-
-
 if __name__ == '__main__':
-    # 1. parse arguments
-    # 2. get a data loader
-    # 3. convert the input model to the desired ONNX variant
-
     parser = argparse.ArgumentParser()
     parser.add_argument('--file', type=str, help='Path to the PyTorch model')
     parser.add_argument('--output', type=str, help='Path to the output ONNX model')
@@ -220,6 +89,7 @@ if __name__ == '__main__':
     parser.add_argument('--iters', default=3, type=int, help='Number of DFO iterations. Ignored if --with_dfo is not set.')
     parser.add_argument('--bs', default=1, type=int, help='Batch size. Necessary when --with_dfo is NOT set, inference will only be available with this batch size.')
     parser.add_argument('--verbose', default=False, action='store_true', help='Print debug messages')
+    parser.add_argument('--bounds', default=8.0, type=float, help='Bounds for the steering angle, in radians. If not set, the model will use the default bounds.')
 
     args = parser.parse_args()
 
@@ -227,6 +97,6 @@ if __name__ == '__main__':
         logging.basicConfig(level=logging.DEBUG)
 
     dataloader = get_loader(batch_size=args.bs)
-    output_path = save_model_to_onnx(args.file, dataloader, args.output, args.with_dfo, args.samples, args.iters)
+    output_path = save_model_to_onnx(args.file, dataloader, args.output, args.with_dfo, args.samples, args.iters, args.bounds)
 
     print(f'Successfuly converted to ONNX: {output_path}')

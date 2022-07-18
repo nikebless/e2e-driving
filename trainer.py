@@ -469,8 +469,8 @@ class EBMTrainer(Trainer):
             gamma=optim_config.lr_scheduler_gamma,
         )
 
-        self.stochastic_optimizer = optimizers.DerivativeFreeOptimizer.initialize(stochastic_optim_config)
-
+        self.inference_model = optimizers.DerivativeFreeOptimizer(self.model, stochastic_optim_config)
+        self.inference_model.to(self.device)
         self.steps = 0
 
     def _initialize_config(self, train_conf, train_dataloader):
@@ -491,16 +491,17 @@ class EBMTrainer(Trainer):
 
         return optim_config, stochastic_optim_config
 
-    def predict(self, model, dataloader):
+    def predict(self, _, dataloader):
         all_predictions = []
-        model.eval()
+        inference_model = self.inference_model
+        inference_model.eval()
 
         with torch.no_grad():
             progress_bar = tqdm(total=len(dataloader), smoothing=0)
             progress_bar.set_description("Model predictions")
             for i, (data, target_values, condition_mask) in enumerate(dataloader):
                 inputs = data['image'].to(self.device)
-                predictions = self.stochastic_optimizer.infer(inputs, model)
+                predictions = inference_model(inputs)
                 all_predictions.extend(predictions.cpu().squeeze().numpy())
                 progress_bar.update(1)
 
@@ -515,7 +516,7 @@ class EBMTrainer(Trainer):
         logging.debug(f'target: {target.shape} {target.dtype}')
 
         # Generate N negatives, one for each element in the batch: (B, N, D).
-        negatives = self.stochastic_optimizer.sample(inputs.size(0))
+        negatives = self.inference_model.sample(inputs.size(0))
 
         # Merge target and negatives: (B, N+1, D).
         targets = torch.cat([target.unsqueeze(dim=1), negatives], dim=1)
@@ -553,7 +554,8 @@ class EBMTrainer(Trainer):
 
     @torch.no_grad()
     def evaluate(self, _, iterator, __, progress_bar, epoch, train_loss):
-        self.model.eval()
+        inference_model = self.inference_model
+        inference_model.eval()
         all_predictions = []
 
         inference_times = []
@@ -568,7 +570,7 @@ class EBMTrainer(Trainer):
             target = target.to(self.device, torch.float32)
 
             inference_start = time.time()
-            preds = self.stochastic_optimizer.infer(inputs, self.model)
+            preds = inference_model(inputs)
             inference_end = time.time()
 
             inference_time = inference_end - inference_start
