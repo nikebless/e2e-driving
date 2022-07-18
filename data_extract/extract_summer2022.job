@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# This script was never used/tested but should work as a template for future jobs.
+
+#SBATCH --job-name="Extract driving data from summer 2022 drives"
+#SBATCH --time=1:00:00
+#SBATCH --cpus-per-task=1
+#SBATCH --partition=testing
+
+#SBATCH --array=0-8
+BAGS=(
+    '2022-07-08-14-37-41_test_vahi_autumnv3_conda_env_python38_ort.bag' \
+    '2022-07-08-15-17-39_test_vahi_autumnv3_global_env_python36_ort.bag' \
+    '2022-07-08-15-41-41_test_vahi_autumnv3_global_env_python27_trt.bag' \
+    '2022-07-08-16-00-49_test_vahi_autumnv3_global_env_python27_trt.bag' \
+    '2022-07-11-14-52-01_test_vahi_ibc_dfo_drop_frames_messy.bag' \
+    '2022-07-11-15-07-09_test_vahi_vanilla_pilotnet_drop_frames.bag' \
+    '2022-07-11-15-22-50_test_vahi_ibc_dfo_drop_frames.bag' \
+    '2022-07-11-15-38-12_test_vahi_ibc_dfo_best_but_not_really_drop_frames.bag' \
+    )
+
+
+srun ./extract_rocket_small.sh ${BAGS[$SLURM_ARRAY_TASK_ID]}  /gpfs/space/projects/Bolt/dataset-new-small/summer2021
