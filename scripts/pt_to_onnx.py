@@ -16,18 +16,19 @@ from pilotnet import PilotnetEBM
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def save_model_to_onnx(model_path, data_loader, output_path, with_optimization, n_samples, iters, bounds):
+def save_model_to_onnx(model_path, data_loader, output_path, with_optimization, n_samples, iters, args):
     batch_size = data_loader.batch_size
 
     model = PilotnetEBM()
     if with_optimization:
         stochastic_optim_config = optimizers.DerivativeFreeConfig(
-            bounds=torch.tensor([[-bounds], [bounds]]),
+            bounds=torch.tensor([[-args.steering_bound], [args.steering_bound]]),
             train_samples=0,
             inference_samples=n_samples,
             iters=iters,
         )
-        model = optimizers.DerivativeFreeOptimizer(model, stochastic_optim_config)
+        inference_wrapper = optimizers.DFOptimizerConst if args.use_constant_samples else optimizers.DFOptimizer
+        model = inference_wrapper(model, stochastic_optim_config)
 
     model.load_state_dict(torch.load(model_path))
     model.to(device)
@@ -85,6 +86,7 @@ if __name__ == '__main__':
     parser.add_argument('--bs', default=1, type=int, help='Batch size. Necessary when --with_dfo is NOT set, inference will only be available with this batch size.')
     parser.add_argument('--verbose', default=False, action='store_true', help='Print debug messages')
     parser.add_argument('--steering-bound', default=4.5, type=float, help='Bounds for the steering angle, in radians. If not set, the model will use the default bounds.')
+    parser.add_argument('--use-constant-samples', default=False, action='store_true', help='Use constant samples instead of random samples.')
 
     args = parser.parse_args()
 
@@ -92,6 +94,6 @@ if __name__ == '__main__':
         logging.basicConfig(level=logging.DEBUG)
 
     dataloader = get_loader(batch_size=args.bs)
-    output_path = save_model_to_onnx(args.file, dataloader, args.output, args.with_dfo, args.samples, args.iters, args.steering_bound)
+    output_path = save_model_to_onnx(args.file, dataloader, args.output, args.with_dfo, args.samples, args.iters, args)
 
     print(f'Successfuly converted to ONNX: {output_path}')

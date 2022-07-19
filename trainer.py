@@ -469,7 +469,9 @@ class EBMTrainer(Trainer):
             gamma=optim_config.lr_scheduler_gamma,
         )
 
-        self.inference_model = optimizers.DerivativeFreeOptimizer(self.model, stochastic_optim_config)
+        inference_wrapper = optimizers.DFOptimizerConst if kwargs['train_conf'].use_constant_samples else optimizers.DFOptimizer
+
+        self.inference_model = inference_wrapper(self.model, stochastic_optim_config)
         self.inference_model.to(self.device)
         self.steps = 0
 

@@ -212,6 +212,12 @@ def parse_arguments():
         default=4.5,
         help='Steering angle bound norm.'
     )
+    
+    argparser.add_argument(
+        '--use-constant-samples',
+        action='store_true',
+        help='Use a constant action grid instead of random sample each time as negatives for EBM training & inference.'
+    )
 
     argparser.add_argument(
         '--debug',
@@ -245,6 +251,7 @@ class TrainingConfig:
         self.stochastic_optimizer_inference_samples = args.stochastic_optimizer_inference_samples
         self.stochastic_optimizer_iters = args.stochastic_optimizer_iters
         self.steering_bound = args.steering_bound
+        self.use_constant_samples = args.use_constant_samples
         self.debug = args.debug
 
         log_format = "%(message)s"

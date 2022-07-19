@@ -28,7 +28,7 @@ class DerivativeFreeConfig:
     bounds: torch.Tensor = torch.tensor([[-8.], [8.]])
 
 
-class DerivativeFreeOptimizer(nn.Module):
+class DFOptimizer(nn.Module):
     """An iterative derivative-free optimizer from the IBC paper. Could be overkill for our purposes."""
 
     def __init__(self, ebm: nn.Module, config: DerivativeFreeConfig):
@@ -59,7 +59,7 @@ class DerivativeFreeOptimizer(nn.Module):
         samples = self._sample(batch_size * self.train_samples)
         return samples.reshape(batch_size, self.train_samples, -1)
 
-    def to(self, device: torch.device) -> DerivativeFreeOptimizer:
+    def to(self, device: torch.device) -> DFOptimizer:
         self.ebm.to(device)
         self.bounds = self.bounds.to(device)
         return self
@@ -97,3 +97,29 @@ class DerivativeFreeOptimizer(nn.Module):
         probs = F.softmax(-1.0 * energies, dim=-1)
         best_idxs = probs.argmax(dim=-1)
         return samples[torch.arange(samples.size(0)), best_idxs, :]
+
+
+class DFOptimizerConst(DFOptimizer):
+    """A derivative-free optimizer that uses a constant vector of negatives."""
+
+    def __init__(self, ebm: nn.Module, config: DerivativeFreeConfig):
+        super().__init__(ebm, config)
+
+        assert self.inference_samples == self.train_samples
+
+        lower_bound = self.bounds[0, 0]
+        upper_bound = self.bounds[1, 0]
+
+        self.negatives = torch.linspace(lower_bound, upper_bound, steps=self.inference_samples, dtype=torch.float32).reshape(1, -1, 1)
+
+    def sample(self, batch_size: int) -> torch.Tensor:
+        return self.negatives.repeat(batch_size, 1, 1)
+    
+    def _sample(self, num_samples: int) -> torch.Tensor:
+        batch_size = num_samples // self.inference_samples
+        return self.negatives.repeat(batch_size, 1, 1)
+
+    def to(self, device: torch.device) -> DFOptimizerConst:
+        super().to(device)
+        self.negatives = self.negatives.to(device)
+        return self

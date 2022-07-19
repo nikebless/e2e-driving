@@ -17,5 +17,9 @@ nohup python train.py \
     --batch-size 512 \
     --num-workers 16 \
     --wandb-project ibc \
-    --stochastic-optimizer-train-samples 32 \
+    --stochastic-optimizer-train-samples 512 \
+    --stochastic-optimizer-inference-samples 512 \
+    --stochastic-optimizer-iters 3 \
+    --steering-bound 4.5 \
+    --use-constant-samples \
     &> runs/$(date +%s)-run.txt &
