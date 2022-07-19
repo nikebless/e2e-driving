@@ -17,7 +17,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def save_model_to_onnx(model_path, data_loader, output_path, with_optimization, n_samples, iters, bounds):
-    action_bounds = data_loader.dataset.get_target_bounds()
     batch_size = data_loader.batch_size
 
     model = PilotnetEBM()
@@ -43,7 +42,7 @@ def save_model_to_onnx(model_path, data_loader, output_path, with_optimization, 
     dynamic_axes = None
 
     if not with_optimization:
-        random_actions = torch.tensor(np.random.uniform(action_bounds[0, 0], action_bounds[1, 0], size=(batch_size, n_samples, 1)), device=device, dtype=torch.float32)
+        random_actions = torch.tensor(np.random.uniform(*bounds, size=(batch_size, n_samples, 1)), device=device, dtype=torch.float32)
         sample_inputs.append(random_actions)
         input_names.append('y')
     else: 
@@ -85,7 +84,7 @@ if __name__ == '__main__':
     parser.add_argument('--iters', default=3, type=int, help='Number of DFO iterations. Ignored if --with_dfo is not set.')
     parser.add_argument('--bs', default=1, type=int, help='Batch size. Necessary when --with_dfo is NOT set, inference will only be available with this batch size.')
     parser.add_argument('--verbose', default=False, action='store_true', help='Print debug messages')
-    parser.add_argument('--bounds', default=8.0, type=float, help='Bounds for the steering angle, in radians. If not set, the model will use the default bounds.')
+    parser.add_argument('--steering-bound', default=4.5, type=float, help='Bounds for the steering angle, in radians. If not set, the model will use the default bounds.')
 
     args = parser.parse_args()
 
@@ -93,6 +92,6 @@ if __name__ == '__main__':
         logging.basicConfig(level=logging.DEBUG)
 
     dataloader = get_loader(batch_size=args.bs)
-    output_path = save_model_to_onnx(args.file, dataloader, args.output, args.with_dfo, args.samples, args.iters, args.bounds)
+    output_path = save_model_to_onnx(args.file, dataloader, args.output, args.with_dfo, args.samples, args.iters, args.steering_bound)
 
     print(f'Successfuly converted to ONNX: {output_path}')

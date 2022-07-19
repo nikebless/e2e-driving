@@ -179,12 +179,6 @@ class NvidiaDataset(Dataset):
             print("Filtering turns with blinker signal")
             self.frames = self.frames[self.frames.turn_signal == 1]
 
-    def get_target_bounds(self):
-        return {
-            "steering_angle":  torch.tensor([[-8.0], [8.0]]), # radians for ±450 degrees steering wheel rotation
-            "waypoints":       NotImplemented,
-        }[self.output_modality]
-
     def __getitem__(self, idx):
         frame = self.frames.iloc[idx]
         if self.color_space == "rgb":

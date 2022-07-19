@@ -207,6 +207,13 @@ def parse_arguments():
     )
 
     argparser.add_argument(
+        '--steering-bound',
+        type=float,
+        default=4.5,
+        help='Steering angle bound norm.'
+    )
+
+    argparser.add_argument(
         '--debug',
         action='store_true',
         help='When true, debug mode is enabled.'
@@ -237,6 +244,7 @@ class TrainingConfig:
         self.stochastic_optimizer_train_samples = args.stochastic_optimizer_train_samples
         self.stochastic_optimizer_inference_samples = args.stochastic_optimizer_inference_samples
         self.stochastic_optimizer_iters = args.stochastic_optimizer_iters
+        self.steering_bound = args.steering_bound
         self.debug = args.debug
 
         log_format = "%(message)s"
@@ -282,7 +290,7 @@ def train_model(model_name, train_conf, augment_conf):
     elif train_conf.model_type == "efficientnet":
         trainer = trainers.EfficientNetTrainer(model_name=model_name, train_conf=train_conf)
     elif train_conf.model_type == "pilotnet-ebm":
-        trainer = trainers.EBMTrainer(model_name=model_name, train_conf=train_conf, train_dataloader=train_loader)
+        trainer = trainers.EBMTrainer(model_name=model_name, train_conf=train_conf)
     else:
         trainer = trainers.ConditionalTrainer(model_name=model_name, train_conf=train_conf)
 

@@ -121,7 +121,7 @@ def get_steering_predictions(dataset_path, model_path, model_type, config):
             model = PilotnetControl(n_outputs=1)
             trainer = trainers.ControlTrainer(None, target_name="steering_angle", n_conditional_branches=3)
         elif model_type == "pilotnet-ebm":
-            trainer = trainers.EBMTrainer(train_conf=config, train_dataloader=validloader_tr)
+            trainer = trainers.EBMTrainer(train_conf=config)
             model = trainer.model
         else:
             print(f"Unknown model type '{model_type}'")

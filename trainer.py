@@ -448,13 +448,13 @@ class ConditionalTrainer(Trainer):
 
 class EBMTrainer(Trainer):
 
-    def __init__(self, train_dataloader=None, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.model = PilotnetEBM()
         self.model.to(self.device)
 
-        optim_config, stochastic_optim_config = self._initialize_config(kwargs['train_conf'], train_dataloader)
+        optim_config, stochastic_optim_config = self._initialize_config(kwargs['train_conf'])
 
         self.optimizer = torch.optim.Adam(
             self.model.parameters(),
@@ -473,7 +473,7 @@ class EBMTrainer(Trainer):
         self.inference_model.to(self.device)
         self.steps = 0
 
-    def _initialize_config(self, train_conf, train_dataloader):
+    def _initialize_config(self, train_conf):
         """Initialize train state based on config values."""
 
         optim_config = optimizers.OptimizerConfig(
@@ -481,7 +481,7 @@ class EBMTrainer(Trainer):
             weight_decay=train_conf.weight_decay,
         )
 
-        target_bounds = train_dataloader.dataset.get_target_bounds().to(self.device)
+        target_bounds = torch.tensor([[-train_conf.steering_bound], [train_conf.steering_bound]]).to(self.device)
         stochastic_optim_config = optimizers.DerivativeFreeConfig(
             bounds=target_bounds,
             train_samples=train_conf.stochastic_optimizer_train_samples,
