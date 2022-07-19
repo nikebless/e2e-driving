@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, default_collate
 import torchvision
 from torchvision import transforms
 import torchvision.transforms.functional as F
@@ -328,9 +328,69 @@ class NvidiaDataset(Dataset):
         return self.frames.steering_angle.to_numpy() / np.pi * 180
 
 
-class NvidiaTrainDataset(NvidiaDataset):
+class NvidiaDatasetGrouped(NvidiaDataset):
+    def __init__(self, *args, **kwargs):
+        self.group_size = kwargs.pop('group_size', 2)
+        super().__init__(*args, **kwargs)
+
+
+    def __len__(self):
+        if self.group_size == 1: return super().__len__()
+
+        return len(self.frames.index) // self.group_size
+
+    def collate_fn(self, batch):
+        data, targets, _ = default_collate(batch)
+        if self.group_size == 1: return data, targets, _
+        for k, v in data.items():
+            data[k] = v.reshape(v.shape[0] * v.shape[1], *v.shape[2:])
+
+        targets = targets.reshape(targets.shape[0] * targets.shape[1], *targets.shape[2:])  
+        return data, targets, _
+
+    def __getitem__(self, idx):
+        if self.group_size == 1: return super().__getitem__(idx)
+
+        idx = idx * self.group_size
+
+        frames = self.frames.iloc[idx:idx+self.group_size]
+        if len(frames) == 1:
+            frames = pd.concat(frames * self.group_size)
+        if self.color_space == "rgb":
+            images = [torchvision.io.read_image(frame["image_path"]) for _, frame in frames.iterrows()]
+        elif self.color_space == "bgr":
+            images = [cv2.imread(frame["image_path"]) for _, frame in frames.iterrows()]
+            images = [torch.tensor(image, dtype=torch.uint8).permute(2, 0, 1) for image in images]
+        else:
+            print(f"Unknown color space: ", self.color_space)
+            sys.exit()
+
+        images = torch.stack(images)
+
+        data = {
+            'image': images,
+            'steering_angle': np.array(frames["steering_angle"]),
+            'vehicle_speed': np.array(frames["vehicle_speed"]),
+            'autonomous': np.array(frames["autonomous"]),
+            'position_x': np.array(frames["position_x"]),
+            'position_y': np.array(frames["position_y"]),
+            'yaw': np.array(frames["yaw"]),
+            'turn_signal': np.array(frames["turn_signal"]),
+            'row_id': np.array(frames["row_id"])
+        }
+
+        target_values = np.array(frames["steering_angle"])
+
+        if self.transform:
+            data = self.transform(data)
+
+        dummy = np.ones((self.group_size, self.target_size))
+
+        return data, target_values.reshape(-1, 1), dummy
+
+class NvidiaTrainDataset(NvidiaDatasetGrouped):
     def __init__(self, root_path, output_modality="steering_angle", n_branches=3, n_waypoints=6,
-                 camera="front_wide"):
+                 camera="front_wide", **args):
         train_paths = [
             root_path / "2021-05-20-12-36-10_e2e_sulaoja_20_30",
             root_path / "2021-05-20-12-43-17_e2e_sulaoja_20_30",
@@ -384,12 +444,12 @@ class NvidiaTrainDataset(NvidiaDataset):
 
         tr = transforms.Compose([Normalize()])
         super().__init__(train_paths, tr, camera=camera,  output_modality=output_modality, n_branches=n_branches,
-                         n_waypoints=n_waypoints)
+                         n_waypoints=n_waypoints, **args)
 
 
-class NvidiaValidationDataset(NvidiaDataset):
+class NvidiaValidationDataset(NvidiaDatasetGrouped):
     # todo: remove default parameters
-    def __init__(self, root_path, output_modality="steering_angle", n_branches=3, n_waypoints=6, camera="front_wide"):
+    def __init__(self, root_path, output_modality="steering_angle", n_branches=3, n_waypoints=6, camera="front_wide", **args):
         valid_paths = [
             root_path / "2021-05-28-15-19-48_e2e_sulaoja_20_30",
             root_path / "2021-06-07-14-20-07_e2e_rec_ss6",
@@ -406,12 +466,12 @@ class NvidiaValidationDataset(NvidiaDataset):
 
         tr = transforms.Compose([Normalize()])
         super().__init__(valid_paths, tr, camera=camera, output_modality=output_modality, n_branches=n_branches,
-                         n_waypoints=n_waypoints)
+                         n_waypoints=n_waypoints, **args)
 
 
 class NvidiaWinterTrainDataset(NvidiaDataset):
     def __init__(self, root_path, output_modality="steering_angle",
-                 n_branches=3, n_waypoints=6, augment_conf=AugmentationConfig()):
+                 n_branches=3, n_waypoints=6, augment_conf=AugmentationConfig(), **args):
         train_paths = [
 
             root_path / "2022-01-28-10-21-14_e2e_rec_peipsiaare_forward",
@@ -434,11 +494,11 @@ class NvidiaWinterTrainDataset(NvidiaDataset):
         ]
 
         tr = transforms.Compose([AugmentImage(augment_config=augment_conf), Normalize()])
-        super().__init__(train_paths, tr, output_modality=output_modality, n_branches=n_branches, n_waypoints=n_waypoints)
+        super().__init__(train_paths, tr, output_modality=output_modality, n_branches=n_branches, n_waypoints=n_waypoints, **args)
 
 
 class NvidiaWinterValidationDataset(NvidiaDataset):
-    def __init__(self, root_path, output_modality="steering_angle", n_branches=3, n_waypoints=6):
+    def __init__(self, root_path, output_modality="steering_angle", n_branches=3, n_waypoints=6, **args):
         valid_paths = [
             root_path / "2022-01-18-12-37-01_e2e_rec_arula_forward",
             root_path / "2022-01-18-12-47-32_e2e_rec_arula_forward_continue",
@@ -449,4 +509,4 @@ class NvidiaWinterValidationDataset(NvidiaDataset):
         ]
 
         tr = transforms.Compose([Normalize()])
-        super().__init__(valid_paths, tr, output_modality=output_modality, n_branches=n_branches, n_waypoints=n_waypoints)
+        super().__init__(valid_paths, tr, output_modality=output_modality, n_branches=n_branches, n_waypoints=n_waypoints, **args)

@@ -220,6 +220,13 @@ def parse_arguments():
     )
 
     argparser.add_argument(
+        '--temporal-regularization',
+        type=float,
+        default=0.0,
+        help='Temporal regularization weight for EBM training.'
+    )
+
+    argparser.add_argument(
         '--debug',
         action='store_true',
         help='When true, debug mode is enabled.'
@@ -252,6 +259,7 @@ class TrainingConfig:
         self.stochastic_optimizer_iters = args.stochastic_optimizer_iters
         self.steering_bound = args.steering_bound
         self.use_constant_samples = args.use_constant_samples
+        self.temporal_regularization = args.temporal_regularization
         self.debug = args.debug
 
         log_format = "%(message)s"
@@ -331,13 +339,15 @@ def load_data(train_conf, augment_conf):
           f"camera name={train_conf.camera_name}, lidar_channel={train_conf.lidar_channel}, "
           f"output_modality={train_conf.output_modality}")
 
+    group_size = 2 if train_conf.temporal_regularization else 1
+
     dataset_path = Path(train_conf.dataset_folder)
     if train_conf.input_modality == "nvidia-camera":
         trainset = NvidiaTrainDataset(dataset_path, train_conf.output_modality,
                                       train_conf.n_branches, n_waypoints=train_conf.n_waypoints,
-                                      camera=train_conf.camera_name)
+                                      camera=train_conf.camera_name, group_size=group_size)
         validset = NvidiaValidationDataset(dataset_path, train_conf.output_modality, train_conf.n_branches,
-                                           n_waypoints=train_conf.n_waypoints)
+                                           n_waypoints=train_conf.n_waypoints, group_size=group_size)
     elif train_conf.input_modality == "nvidia-camera-winter":
         trainset = NvidiaWinterTrainDataset(dataset_path, train_conf.output_modality,
                                             train_conf.n_branches, n_waypoints=train_conf.n_waypoints,
@@ -355,24 +365,26 @@ def load_data(train_conf, augment_conf):
     print(f"Validation data has {len(validset.frames)} frames")
     print(f"Creating {train_conf.num_workers} workers with batch size {train_conf.batch_size} using {train_conf.batch_sampler} sampler.")
 
+    train_conf.batch_size = train_conf.batch_size // group_size
+
     if train_conf.batch_sampler == 'weighted':
         weights = calculate_weights(trainset.frames)
         sampler = WeightedRandomSampler(weights, num_samples=len(trainset), replacement=True)
 
         train_loader = torch.utils.data.DataLoader(trainset, batch_size=train_conf.batch_size, shuffle=False,
                                                    sampler=sampler, num_workers=train_conf.num_workers,
-                                                   pin_memory=True, persistent_workers=True)
+                                                   pin_memory=True, persistent_workers=True, collate_fn=trainset.collate_fn)
     elif train_conf.batch_sampler == 'random':
         train_loader = torch.utils.data.DataLoader(trainset, batch_size=train_conf.batch_size, shuffle=True,
                                                    num_workers=train_conf.num_workers, pin_memory=True,
-                                                   persistent_workers=True)
+                                                   persistent_workers=True, collate_fn=trainset.collate_fn)
     else:
         print(f"Unknown batch sampler {train_conf.batch_sampler}")
         sys.exit()
 
     valid_loader = torch.utils.data.DataLoader(validset, batch_size=train_conf.batch_size, shuffle=False,
                                                num_workers=train_conf.num_workers, pin_memory=True,
-                                               persistent_workers=True)
+                                               persistent_workers=True, collate_fn=trainset.collate_fn)
 
     return train_loader, valid_loader
 

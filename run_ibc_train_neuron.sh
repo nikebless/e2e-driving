@@ -22,4 +22,5 @@ nohup python train.py \
     --stochastic-optimizer-iters 3 \
     --steering-bound 4.5 \
     --use-constant-samples \
+    --temporal-regularization 0.1 \
     &> runs/$(date +%s)-run.txt &

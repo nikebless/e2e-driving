@@ -473,6 +473,7 @@ class EBMTrainer(Trainer):
 
         inference_wrapper = optimizers.DFOptimizerConst if self.train_conf.use_constant_samples else optimizers.DFOptimizer
 
+        self.temporal_regularization_criterion = CrossEntropyLoss()
         self.inference_model = inference_wrapper(self.model, stochastic_optim_config)
         self.inference_model.to(self.device)
         self.steps = 0
@@ -550,6 +551,12 @@ class EBMTrainer(Trainer):
         logging.debug(f'logits: {logits.shape}')
         logging.debug(f'ground truth: {ground_truth.shape}')
         loss = self.criterion(logits, ground_truth)
+
+        if self.train_conf.temporal_regularization:
+            odd_logits = logits[:, ::2]
+            even_logits = logits[:, 1::2]
+            if odd_logits.shape == even_logits.shape:
+                loss += self.train_conf.temporal_regularization * self.temporal_regularization_criterion(odd_logits, even_logits)
 
         self.optimizer.zero_grad(set_to_none=True)
         self.steps += 1
