@@ -16,7 +16,7 @@ from pilotnet import PilotnetEBM
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def save_model_to_onnx(model_path, data_loader, output_path, with_optimization, n_samples, iters, args):
+def convert_pt_to_onnx(model_path, data_loader, output_path, with_optimization, n_samples, iters, args):
     batch_size = data_loader.batch_size
 
     model = PilotnetEBM()
@@ -43,7 +43,7 @@ def save_model_to_onnx(model_path, data_loader, output_path, with_optimization, 
     dynamic_axes = None
 
     if not with_optimization:
-        random_actions = torch.tensor(np.random.uniform(*bounds, size=(batch_size, n_samples, 1)), device=device, dtype=torch.float32)
+        random_actions = torch.tensor(np.random.uniform(-args.steering_bound, args.steering_bound, size=(batch_size, n_samples, 1)), device=device, dtype=torch.float32)
         sample_inputs.append(random_actions)
         input_names.append('y')
     else: 
@@ -76,7 +76,7 @@ def get_loader(batch_size=1, dataset_path='/data/Bolt/dataset-new-small/summer20
     return valid_loader
 
 
-if __name__ == '__main__':
+def convert_pt_to_onnx(raw_args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--file', type=str, help='Path to the PyTorch model')
     parser.add_argument('--output', type=str, help='Path to the output ONNX model')
@@ -88,12 +88,16 @@ if __name__ == '__main__':
     parser.add_argument('--steering-bound', default=4.5, type=float, help='Bounds for the steering angle, in radians. If not set, the model will use the default bounds.')
     parser.add_argument('--use-constant-samples', default=False, action='store_true', help='Use constant samples instead of random samples.')
 
-    args = parser.parse_args()
+    args = parser.parse_args(raw_args)
 
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
 
     dataloader = get_loader(batch_size=args.bs)
-    output_path = save_model_to_onnx(args.file, dataloader, args.output, args.with_dfo, args.samples, args.iters, args)
+    output_path = convert_pt_to_onnx(args.file, dataloader, args.output, args.with_dfo, args.samples, args.iters, args)
 
     print(f'Successfuly converted to ONNX: {output_path}')
+
+
+if __name__ == '__main__':
+    convert_pt_to_onnx()

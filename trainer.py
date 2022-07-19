@@ -21,6 +21,7 @@ from metrics.metrics import calculate_open_loop_metrics, calculate_trajectory_op
 from ibc import optimizers
 from pilotnet import PilotNet, PilotNetConditional, PilotnetControl, PilotnetEBM
 from efficient_net import effnetv2_s
+from scripts.pt_to_onnx import convert_pt_to_onnx
 
 import train
 
@@ -453,8 +454,9 @@ class EBMTrainer(Trainer):
 
         self.model = PilotnetEBM()
         self.model.to(self.device)
+        self.train_conf = kwargs['train_conf']
 
-        optim_config, stochastic_optim_config = self._initialize_config(kwargs['train_conf'])
+        optim_config, stochastic_optim_config = self._initialize_config(self.train_conf)
 
         self.optimizer = torch.optim.Adam(
             self.model.parameters(),
@@ -469,7 +471,7 @@ class EBMTrainer(Trainer):
             gamma=optim_config.lr_scheduler_gamma,
         )
 
-        inference_wrapper = optimizers.DFOptimizerConst if kwargs['train_conf'].use_constant_samples else optimizers.DFOptimizer
+        inference_wrapper = optimizers.DFOptimizerConst if self.train_conf.use_constant_samples else optimizers.DFOptimizer
 
         self.inference_model = inference_wrapper(self.model, stochastic_optim_config)
         self.inference_model.to(self.device)
@@ -593,3 +595,28 @@ class EBMTrainer(Trainer):
         avg_mae = epoch_mae / len(iterator)
         result = np.array(all_predictions)
         return avg_mae, result
+
+    def save_onnx(self, _, __):
+        pt_models = [f'{self.save_dir}/last.pt', f'{self.save_dir}/best.pt']
+
+        for pt_model_path in pt_models:
+
+            pure_model_args = ['--file', pt_model_path, '--output', pt_model_path.replace('.pt', '-pure.onnx'),
+                               '--samples', self.inference_model.inference_samples, '--bs', 32,
+                               '--steering-bound', self.inference_model.bounds.max().item()]
+
+            dfo_model_args = ['--file', pt_model_path, '--output', pt_model_path.replace('.pt', '-dfo.onnx'),
+                              '--with-dfo', '--iters', self.inference_model.iters,
+                              '--samples', self.inference_model.inference_samples, '--bs', 1,
+                               '--steering-bound', self.inference_model.bounds.max().item()]
+
+            if self.train_conf.use_constant_samples:
+                dfo_model_args.append('--use-constant-samples')
+            
+            pure_model_path = convert_pt_to_onnx(pure_model_args)
+            dfo_model_path = convert_pt_to_onnx(dfo_model_args)
+
+            if self.wandb_logging:
+                wandb.save(pure_model_path)
+                wandb.save(dfo_model_path)
+
