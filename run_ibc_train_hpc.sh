@@ -29,7 +29,8 @@ srun python -u train.py \
     --batch-size 512 \
     --num-workers 16 \
     --wandb-project ibc \
-    --stochastic-optimizer-train-samples 512 \
-    --stochastic-optimizer-inference-samples 512 \
+    --stochastic-optimizer-train-samples 1024 \
+    --stochastic-optimizer-inference-samples 1024 \
     --stochastic-optimizer-iters 3 \
     --steering-bound 4.5 \
+    --use-constant-samples

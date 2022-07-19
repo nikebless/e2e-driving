@@ -105,21 +105,24 @@ class DFOptimizerConst(DFOptimizer):
     def __init__(self, ebm: nn.Module, config: DerivativeFreeConfig):
         super().__init__(ebm, config)
 
-        assert self.inference_samples == self.train_samples
+        if self.inference_samples != self.train_samples:
+            logging.warn('inference_samples is not equal to train_samples, which might cause poor performance when using constant samples')
 
         lower_bound = self.bounds[0, 0]
         upper_bound = self.bounds[1, 0]
 
-        self.negatives = torch.linspace(lower_bound, upper_bound, steps=self.inference_samples, dtype=torch.float32).reshape(1, -1, 1)
+        self.negatives_train = torch.linspace(lower_bound, upper_bound, steps=self.train_samples, dtype=torch.float32).reshape(1, -1, 1)
+        self.negatives_eval = torch.linspace(lower_bound, upper_bound, steps=self.inference_samples, dtype=torch.float32).reshape(1, -1, 1)
 
     def sample(self, batch_size: int) -> torch.Tensor:
-        return self.negatives.repeat(batch_size, 1, 1)
+        return self.negatives_train.repeat(batch_size, 1, 1)
     
     def _sample(self, num_samples: int) -> torch.Tensor:
         batch_size = num_samples // self.inference_samples
-        return self.negatives.repeat(batch_size, 1, 1)
+        return self.negatives_eval.repeat(batch_size, 1, 1)
 
     def to(self, device: torch.device) -> DFOptimizerConst:
         super().to(device)
-        self.negatives = self.negatives.to(device)
+        self.negatives_train = self.negatives_train.to(device)
+        self.negatives_eval = self.negatives_eval.to(device)
         return self
