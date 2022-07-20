@@ -320,7 +320,7 @@ class NvidiaDataset(Dataset):
                 frames_df[f"wp{i}_all_x"] = frames_df[f"wp{i}_{camera}_x"]
                 frames_df[f"wp{i}_all_y"] = frames_df[f"wp{i}_{camera}_y"]
 
-        print(f"{dataset_path}: lenght={len(frames_df)}, filtered={len_before_filtering-len_after_filtering}")
+        print(f"{dataset_path}: length={len(frames_df)}, filtered={len_before_filtering-len_after_filtering}")
         frames_df.reset_index(inplace=True)
         return frames_df
 
