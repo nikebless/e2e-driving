@@ -2,6 +2,7 @@ import sys
 from abc import abstractmethod
 from datetime import datetime
 from pathlib import Path
+import uuid
 
 import numpy as np
 import onnx
@@ -82,7 +83,8 @@ class Trainer:
 
             if model_name:
                 datetime_prefix = datetime.today().strftime('%Y%m%d%H%M%S')
-                self.save_dir = Path("models") / f"{datetime_prefix}_{model_name}"
+                uuid_prefx = str(uuid.uuid4())[:8]
+                self.save_dir = Path("models") / f"{datetime_prefix}_{uuid_prefx}_{model_name}"
                 self.save_dir.mkdir(parents=True, exist_ok=False)
 
     def force_cpu(self):
@@ -107,7 +109,7 @@ class Trainer:
             train_loss = self.train_epoch(model, train_loader, optimizer, criterion, progress_bar, epoch)
 
             progress_bar.reset(total=len(valid_loader))
-            valid_loss, predictions = self.evaluate(model, valid_loader, criterion, progress_bar, epoch, train_loss)
+            valid_loss, predictions, temp_reg_loss = self.evaluate(model, valid_loader, criterion, progress_bar, epoch, train_loss)
 
             scheduler.step(valid_loss)
 
@@ -123,6 +125,7 @@ class Trainer:
                 best_loss_marker = ''
 
             metrics = self.calculate_metrics(fps, predictions, valid_loader)
+            metrics['temporal_reg_loss'] = temp_reg_loss
             # todo: this if elif is getting bad, abstract to separate classes
             if self.target_name == "steering_angle":
                 whiteness = metrics['whiteness']
@@ -226,6 +229,7 @@ class Trainer:
 
     def train_epoch(self, model, loader, optimizer, criterion, progress_bar, epoch):
         running_loss = 0.0
+        running_temporal_reg_loss = 0.0
 
         model.train()
 
@@ -240,7 +244,11 @@ class Trainer:
 
             optimizer.zero_grad()
 
-            predictions, loss = self.train_batch(model, data, target_values, condition_mask, criterion)
+            batch_results = self.train_batch(model, data, target_values, condition_mask, criterion)
+            if len(batch_results) == 2:
+                predictions, loss = batch_results
+            elif len(batch_results) == 3:
+                predictions, loss, temporal_reg_loss = batch_results
 
             loss.backward()
             optimizer.step()
@@ -248,9 +256,10 @@ class Trainer:
                 self.scheduler.step()
 
             running_loss += loss.item()
+            running_temporal_reg_loss += temporal_reg_loss.item()
 
             progress_bar.update(1)
-            progress_bar.set_description(f'epoch {epoch+1} | train loss: {(running_loss / (i + 1)):.4f}')
+            progress_bar.set_description(f'epoch {epoch+1} | train loss: {(running_loss / (i + 1)):.4f} | temp reg loss: {running_temporal_reg_loss / (i+1):.4f}')
 
             ask_batch_timestamp = time.time()
 
@@ -266,6 +275,7 @@ class Trainer:
 
     def evaluate(self, model, iterator, criterion, progress_bar, epoch, train_loss):
         epoch_loss = 0.0
+        epoch_temporal_reg_loss = 0.0
         model.eval()
         all_predictions = []
 
@@ -275,18 +285,25 @@ class Trainer:
                 recv_batch_timestap = time.time()
                 logging.debug(f'Model waited for batch: {(recv_batch_timestap - ask_batch_timestamp) * 1000:.2f} ms')
 
-                predictions, loss = self.train_batch(model, data, target_values, condition_mask, criterion)
+                batch_results = self.train_batch(model, data, target_values, condition_mask, criterion)
+                if len(batch_results) == 2:
+                    predictions, loss = batch_results
+                elif len(batch_results) == 3:
+                    predictions, loss, temporal_reg_loss = batch_results
+
                 epoch_loss += loss.item()
+                epoch_temporal_reg_loss += temporal_reg_loss.item()
                 all_predictions.extend(predictions.cpu().squeeze().numpy())
 
                 progress_bar.update(1)
-                progress_bar.set_description(f'epoch {epoch + 1} | train loss: {train_loss:.4f} | valid loss: {(epoch_loss / (i + 1)):.4f}')
+                progress_bar.set_description(f'epoch {epoch + 1} | train loss: {train_loss:.4f} | valid loss: {(epoch_loss / (i + 1)):.4f} | temp reg loss: {epoch_temporal_reg_loss / (i + 1):.4f}')
 
                 ask_batch_timestamp = time.time()
 
         total_loss = epoch_loss / len(iterator)
+        total_temporal_reg_loss = epoch_temporal_reg_loss / len(iterator)
         result = np.array(all_predictions)
-        return total_loss, result
+        return total_loss, result, total_temporal_reg_loss
 
 
 class PilotNetTrainer(Trainer):
@@ -551,15 +568,24 @@ class EBMTrainer(Trainer):
         logging.debug(f'logits: {logits.shape}')
         logging.debug(f'ground truth: {ground_truth.shape}')
         loss = self.criterion(logits, ground_truth)
+        temporal_regularization_loss = None
 
         if self.train_conf.temporal_regularization:
-            odd_logits = logits[:, ::2]
-            even_logits = logits[:, 1::2]
-            if odd_logits.shape == even_logits.shape:
-                loss += self.train_conf.temporal_regularization * self.temporal_regularization_criterion(odd_logits, even_logits)
+
+            # not sure why cross-entropy is negative for negative logits, but we need it to be positive, so torch.abs
+            # logits should only be ever negative in the very first few batches, so this shouldn't impact the training
+            odd_samples = torch.abs(logits[::2, :])
+            even_samples = torch.abs(logits[1::2, :])
+
+            if odd_samples.shape == even_samples.shape:
+                temporal_regularization_loss = self.temporal_regularization_criterion(odd_samples, even_samples)
+                loss += self.train_conf.temporal_regularization * temporal_regularization_loss
 
         self.optimizer.zero_grad(set_to_none=True)
         self.steps += 1
+
+        if temporal_regularization_loss is not None:
+            return energy, loss, temporal_regularization_loss
 
         return energy, loss
 
