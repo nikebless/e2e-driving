@@ -23,4 +23,5 @@ nohup python train.py \
     --steering-bound 4.5 \
     --use-constant-samples \
     --temporal-regularization 0.1 \
+    --temporal-group-size 2 \
     &> runs/$(date +%s)-run.txt &
