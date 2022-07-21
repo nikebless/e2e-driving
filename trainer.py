@@ -272,9 +272,6 @@ class Trainer:
 
             ask_batch_timestamp = time.time()
 
-            if i > 10:
-                break
-
         avg_loss = running_loss / len(loader)
         if running_temporal_reg_loss > 0:
             avg_temporal_reg_loss = running_temporal_reg_loss / len(loader)
