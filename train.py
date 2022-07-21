@@ -227,6 +227,13 @@ def parse_arguments():
     )
 
     argparser.add_argument(
+        '--temporal-group-size',
+        type=int,
+        default=1,
+        help='Temporal group size for EBM training. Group size = 2 is necessary for temporal regularization.'
+    )
+
+    argparser.add_argument(
         '--debug',
         action='store_true',
         help='When true, debug mode is enabled.'
@@ -260,6 +267,7 @@ class TrainingConfig:
         self.steering_bound = args.steering_bound
         self.use_constant_samples = args.use_constant_samples
         self.temporal_regularization = args.temporal_regularization
+        self.temporal_group_size = args.temporal_group_size
         self.debug = args.debug
 
         log_format = "%(message)s"
@@ -339,7 +347,7 @@ def load_data(train_conf, augment_conf):
           f"camera name={train_conf.camera_name}, lidar_channel={train_conf.lidar_channel}, "
           f"output_modality={train_conf.output_modality}")
 
-    group_size = 2 if train_conf.temporal_regularization else 1
+    group_size = train_conf.temporal_group_size
 
     dataset_path = Path(train_conf.dataset_folder)
     if train_conf.input_modality == "nvidia-camera":
