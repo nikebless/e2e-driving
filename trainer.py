@@ -633,8 +633,7 @@ class EBMTrainer(Trainer):
 
                 if odd_samples.shape == even_samples.shape:
                     temporal_regularization_loss = self.temporal_regularization_criterion(odd_samples, even_samples)
-                    temporal_regularization_loss_weighted = self.train_conf.temporal_regularization * temporal_regularization_loss 
-                    epoch_temporal_reg_loss += temporal_regularization_loss_weighted.item()
+                    epoch_temporal_reg_loss += temporal_regularization_loss.item()
 
             mae = F.l1_loss(preds, target.view(-1, 1))
             epoch_mae += mae.item()
