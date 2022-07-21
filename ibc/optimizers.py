@@ -96,7 +96,7 @@ class DFOptimizer(nn.Module):
         energies = ebm(x, samples)
         probs = F.softmax(-1.0 * energies, dim=-1)
         best_idxs = probs.argmax(dim=-1)
-        return samples[torch.arange(samples.size(0)), best_idxs, :]
+        return samples[torch.arange(samples.size(0)), best_idxs, :], energies
 
 
 class DFOptimizerConst(DFOptimizer):

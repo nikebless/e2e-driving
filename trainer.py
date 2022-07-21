@@ -106,10 +106,18 @@ class Trainer:
         for epoch in range(n_epoch):
 
             progress_bar = tqdm(total=len(train_loader), smoothing=0)
-            train_loss = self.train_epoch(model, train_loader, optimizer, criterion, progress_bar, epoch)
+            epoch_results = self.train_epoch(model, train_loader, optimizer, criterion, progress_bar, epoch)
+            if len(epoch_results) == 1:
+                train_loss = epoch_results
+            elif len(epoch_results) == 2:
+                train_loss, temp_reg_loss = epoch_results
 
             progress_bar.reset(total=len(valid_loader))
-            valid_loss, predictions, temp_reg_loss = self.evaluate(model, valid_loader, criterion, progress_bar, epoch, train_loss)
+            epoch_results = self.evaluate(model, valid_loader, criterion, progress_bar, epoch, train_loss)
+            if len(epoch_results) == 2:
+                valid_loss, predictions = epoch_results
+            elif len(epoch_results) == 3:
+                valid_loss, predictions, valid_temp_reg_loss = epoch_results
 
             scheduler.step(valid_loss)
 
@@ -126,6 +134,7 @@ class Trainer:
 
             metrics = self.calculate_metrics(fps, predictions, valid_loader)
             metrics['temporal_reg_loss'] = temp_reg_loss
+            metrics['valid_temporal_reg_loss'] = valid_temp_reg_loss
             # todo: this if elif is getting bad, abstract to separate classes
             if self.target_name == "steering_angle":
                 whiteness = metrics['whiteness']
@@ -263,7 +272,15 @@ class Trainer:
 
             ask_batch_timestamp = time.time()
 
-        return running_loss / len(loader)
+            if i > 10:
+                break
+
+        avg_loss = running_loss / len(loader)
+        if running_temporal_reg_loss > 0:
+            avg_temporal_reg_loss = running_temporal_reg_loss / len(loader)
+            return avg_loss, avg_temporal_reg_loss
+
+        return avg_loss
 
     @abstractmethod
     def train_batch(self, model, data, target_values, condition_mask, criterion):
@@ -275,7 +292,6 @@ class Trainer:
 
     def evaluate(self, model, iterator, criterion, progress_bar, epoch, train_loss):
         epoch_loss = 0.0
-        epoch_temporal_reg_loss = 0.0
         model.eval()
         all_predictions = []
 
@@ -285,14 +301,9 @@ class Trainer:
                 recv_batch_timestap = time.time()
                 logging.debug(f'Model waited for batch: {(recv_batch_timestap - ask_batch_timestamp) * 1000:.2f} ms')
 
-                batch_results = self.train_batch(model, data, target_values, condition_mask, criterion)
-                if len(batch_results) == 2:
-                    predictions, loss = batch_results
-                elif len(batch_results) == 3:
-                    predictions, loss, temporal_reg_loss = batch_results
+                predictions, loss = self.train_batch(model, data, target_values, condition_mask, criterion)
 
                 epoch_loss += loss.item()
-                epoch_temporal_reg_loss += temporal_reg_loss.item()
                 all_predictions.extend(predictions.cpu().squeeze().numpy())
 
                 progress_bar.update(1)
@@ -301,9 +312,8 @@ class Trainer:
                 ask_batch_timestamp = time.time()
 
         total_loss = epoch_loss / len(iterator)
-        total_temporal_reg_loss = epoch_temporal_reg_loss / len(iterator)
         result = np.array(all_predictions)
-        return total_loss, result, total_temporal_reg_loss
+        return total_loss, result
 
 
 class PilotNetTrainer(Trainer):
@@ -523,7 +533,7 @@ class EBMTrainer(Trainer):
             progress_bar.set_description("Model predictions")
             for i, (data, target_values, condition_mask) in enumerate(dataloader):
                 inputs = data['image'].to(self.device)
-                predictions = inference_model(inputs)
+                predictions, energy = inference_model(inputs)
                 all_predictions.extend(predictions.cpu().squeeze().numpy())
                 progress_bar.update(1)
 
@@ -598,6 +608,7 @@ class EBMTrainer(Trainer):
         inference_times = []
 
         epoch_mae = 0.0
+        epoch_temporal_reg_loss = 0.0
         ask_batch_timestamp = time.time()
         for i, (input, target, _) in enumerate(iterator):
             recv_batch_timestap = time.time()
@@ -607,7 +618,7 @@ class EBMTrainer(Trainer):
             target = target.to(self.device, torch.float32)
 
             inference_start = time.time()
-            preds = inference_model(inputs)
+            preds, energy = inference_model(inputs)
             inference_end = time.time()
 
             inference_time = inference_end - inference_start
@@ -615,19 +626,33 @@ class EBMTrainer(Trainer):
 
             logging.debug(f'inference time: {inference_time} | avg : {np.mean(inference_times)} | max: {np.max(inference_times)} | min: {np.min(inference_times)}')
 
+            if self.train_conf.temporal_regularization:
+                logits = -1 * energy
+
+                # not sure why cross-entropy is negative for negative logits, but we need it to be positive, so use torch.abs.
+                # logits should only be ever negative in the very first few batches, so this shouldn't impact the regularization, right?
+                odd_samples = torch.abs(logits[::2, :])
+                even_samples = torch.abs(logits[1::2, :])
+
+                if odd_samples.shape == even_samples.shape:
+                    temporal_regularization_loss = self.temporal_regularization_criterion(odd_samples, even_samples)
+                    temporal_regularization_loss_weighted = self.train_conf.temporal_regularization * temporal_regularization_loss 
+                    epoch_temporal_reg_loss += temporal_regularization_loss_weighted.item()
+
             mae = F.l1_loss(preds, target.view(-1, 1))
             epoch_mae += mae.item()
 
             all_predictions.extend(preds.cpu().squeeze().numpy())
 
             progress_bar.update(1)
-            progress_bar.set_description(f'epoch {epoch + 1} | train loss: {train_loss:.4f} | valid loss: {(epoch_mae / (i + 1)):.4f}')
+            progress_bar.set_description(f'epoch {epoch + 1} | train loss: {train_loss:.4f} | valid loss: {(epoch_mae / (i + 1)):.4f} | valid temporal reg loss: {(epoch_temporal_reg_loss / (i + 1)):.4f}')
 
             ask_batch_timestamp = time.time()
 
         avg_mae = epoch_mae / len(iterator)
+        avg_temp_reg_loss = epoch_temporal_reg_loss / len(iterator)
         result = np.array(all_predictions)
-        return avg_mae, result
+        return avg_mae, result, avg_temp_reg_loss
 
     def save_onnx(self, _, __):
         pt_models = [f'{self.save_dir}/last.pt', f'{self.save_dir}/best.pt']
