@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 import torch
 
-from torch.utils.data import Dataset, default_collate
+from torch.utils.data import Dataset
+from torch.utils.data._utils.collate import default_collate
 import torchvision
 from torchvision import transforms
 import torchvision.transforms.functional as F

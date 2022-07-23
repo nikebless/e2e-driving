@@ -104,10 +104,13 @@ class Trainer:
         scheduler = ReduceLROnPlateau(optimizer, 'min', patience=2, factor=0.1, verbose=True)
 
         for epoch in range(n_epoch):
+            
+            temp_reg_loss = None
+            valid_temp_reg_loss = None
 
             progress_bar = tqdm(total=len(train_loader), smoothing=0)
             epoch_results = self.train_epoch(model, train_loader, optimizer, criterion, progress_bar, epoch)
-            if len(epoch_results) == 1:
+            if not isinstance(epoch_results, tuple):
                 train_loss = epoch_results
             elif len(epoch_results) == 2:
                 train_loss, temp_reg_loss = epoch_results
@@ -253,6 +256,7 @@ class Trainer:
 
             optimizer.zero_grad()
 
+            temporal_reg_loss = None
             batch_results = self.train_batch(model, data, target_values, condition_mask, criterion)
             if len(batch_results) == 2:
                 predictions, loss = batch_results
@@ -265,12 +269,16 @@ class Trainer:
                 self.scheduler.step()
 
             running_loss += loss.item()
-            running_temporal_reg_loss += temporal_reg_loss.item()
+            if temporal_reg_loss is not None:
+                running_temporal_reg_loss += temporal_reg_loss.item()
 
             progress_bar.update(1)
             progress_bar.set_description(f'epoch {epoch+1} | train loss: {(running_loss / (i + 1)):.4f} | temp reg loss: {running_temporal_reg_loss / (i+1):.4f}')
 
             ask_batch_timestamp = time.time()
+
+            if i > 10:
+                break
 
         avg_loss = running_loss / len(loader)
         if running_temporal_reg_loss > 0:
