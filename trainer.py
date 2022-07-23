@@ -277,9 +277,6 @@ class Trainer:
 
             ask_batch_timestamp = time.time()
 
-            if i > 10:
-                break
-
         avg_loss = running_loss / len(loader)
         if running_temporal_reg_loss > 0:
             avg_temporal_reg_loss = running_temporal_reg_loss / len(loader)
@@ -668,9 +665,9 @@ class EBMTrainer(Trainer):
                                '--steering-bound', self.inference_model.bounds.max().item()]
 
             dfo_model_args = ['--file', pt_model_path, '--output', pt_model_path.replace('.pt', '-dfo.onnx'),
-                              '--with-dfo', '--iters', self.inference_model.iters,
-                              '--samples', self.inference_model.inference_samples, '--bs', 1,
-                               '--steering-bound', self.inference_model.bounds.max().item()]
+                              '--with-dfo', '--iters', str(self.inference_model.iters),
+                              '--samples', str(self.inference_model.inference_samples), '--bs', '1',
+                               '--steering-bound', str(self.inference_model.bounds.max().item())]
 
             if self.train_conf.use_constant_samples:
                 dfo_model_args.append('--use-constant-samples')
