@@ -586,8 +586,12 @@ class EBMTrainer(Trainer):
 
             # not sure why cross-entropy is negative for negative logits, but we need it to be positive, so torch.abs
             # logits should only be ever negative in the very first few batches, so this shouldn't impact the training
-            odd_samples = torch.abs(logits[::2, :])
-            even_samples = torch.abs(logits[1::2, :])
+            index_start = 1 if self.train_conf.temporal_regularization_ignore_target else 0
+            regularized_logits = logits[:, index_start:]
+            logging.debug(f'logits.shape: {logits.shape}. regularized_logits.shape: {regularized_logits.shape}')
+
+            odd_samples = torch.abs(regularized_logits[::2, index_start:])
+            even_samples = torch.abs(regularized_logits[1::2, index_start:])
 
             if odd_samples.shape == even_samples.shape:
                 temporal_regularization_loss = self.temporal_regularization_criterion(odd_samples, even_samples)
@@ -633,8 +637,12 @@ class EBMTrainer(Trainer):
 
                 # not sure why cross-entropy is negative for negative logits, but we need it to be positive, so use torch.abs.
                 # logits should only be ever negative in the very first few batches, so this shouldn't impact the regularization, right?
-                odd_samples = torch.abs(logits[::2, :])
-                even_samples = torch.abs(logits[1::2, :])
+                index_start = 1 if self.train_conf.temporal_regularization_ignore_target else 0
+                regularized_logits = logits[:, index_start:]
+                logging.debug(f'logits.shape: {logits.shape}. regularized_logits.shape: {regularized_logits.shape}')
+
+                odd_samples = torch.abs(regularized_logits[::2, index_start:])
+                even_samples = torch.abs(regularized_logits[1::2, index_start:])
 
                 if odd_samples.shape == even_samples.shape:
                     temporal_regularization_loss = self.temporal_regularization_criterion(odd_samples, even_samples)

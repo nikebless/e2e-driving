@@ -234,6 +234,14 @@ def parse_arguments():
     )
 
     argparser.add_argument(
+        '--temporal-regularization-ignore-target',
+        required=False,
+        action='store_true',
+        default=False,
+        help='Ignore true target action for temporal regularization. Only regularize the negatives.'
+    )
+
+    argparser.add_argument(
         '--debug',
         action='store_true',
         help='When true, debug mode is enabled.'
@@ -268,6 +276,7 @@ class TrainingConfig:
         self.use_constant_samples = args.use_constant_samples
         self.temporal_regularization = args.temporal_regularization
         self.temporal_group_size = args.temporal_group_size
+        self.temporal_regularization_ignore_target = args.temporal_regularization_ignore_target
         self.debug = args.debug
 
         log_format = "%(message)s"
