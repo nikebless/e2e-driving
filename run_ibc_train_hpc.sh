@@ -13,7 +13,7 @@
 #SBATCH --mem=60G
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:tesla:1
-##SBATCH --exclude=falcon1,falcon2,falcon3
+#SBATCH --exclude=falcon2
 
 # Actual job command(s)
 
@@ -33,4 +33,6 @@ srun python -u train.py \
     --stochastic-optimizer-inference-samples 1024 \
     --stochastic-optimizer-iters 3 \
     --steering-bound 4.5 \
-    --use-constant-samples
+    --use-constant-samples \
+    --temporal-regularization 0 \
+    --temporal-group-size 2 \
