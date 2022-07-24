@@ -675,8 +675,8 @@ class EBMTrainer(Trainer):
         for pt_model_path in pt_models:
 
             pure_model_args = ['--file', pt_model_path, '--output', pt_model_path.replace('.pt', '-pure.onnx'),
-                               '--samples', self.inference_model.inference_samples, '--bs', 32,
-                               '--steering-bound', self.inference_model.bounds.max().item()]
+                               '--samples', str(self.inference_model.inference_samples), '--bs', '32',
+                               '--steering-bound', str(self.inference_model.bounds.max().item())]
 
             dfo_model_args = ['--file', pt_model_path, '--output', pt_model_path.replace('.pt', '-dfo.onnx'),
                               '--with-dfo', '--iters', str(self.inference_model.iters),
