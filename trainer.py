@@ -537,14 +537,14 @@ class EBMTrainer(Trainer):
 
         return optim_config, stochastic_optim_config
 
-    def calc_temporal_regularization(self, logits: Tensor, target_indices: Tensor = None) -> Tensor:
+    def calc_temporal_regularization(self, logits: Tensor, eval=False) -> Tensor:
         """
-        Calculate the temporal regularization loss for the given logits and target indices.
+        Calculate the temporal regularization loss for the given (unshuffled) logits and target indices.
         """
 
-        if self.train_conf.temporal_regularization_ignore_target and target_indices is not None:
-            mask = torch.ones_like(logits).scatter_(1, target_indices.unsqueeze(1), 0)
-            logits = logits[mask.bool()].view(logits.shape[0], logits.shape[1]-1)
+        if self.train_conf.temporal_regularization_ignore_target and not eval:
+            # ignore (always changing) ground truth
+            logits[:, 1] = 0.
 
         odd_samples = logits[::2, :]
         even_samples = logits[1::2, :]
@@ -610,7 +610,8 @@ class EBMTrainer(Trainer):
         temporal_regularization_loss = None
 
         if self.train_conf.temporal_regularization:
-            temporal_regularization_loss = self.calc_temporal_regularization(logits, ground_truth)
+            logits_unshuffled = logits[torch.arange(logits.size(0)).unsqueeze(-1), torch.argsort(permutation)]
+            temporal_regularization_loss = self.calc_temporal_regularization(logits_unshuffled)
             loss += self.train_conf.temporal_regularization * temporal_regularization_loss
 
         self.optimizer.zero_grad(set_to_none=True)
@@ -651,7 +652,7 @@ class EBMTrainer(Trainer):
 
             if self.train_conf.temporal_regularization:
                 logits = -1 * energy
-                temporal_regularization_loss = self.calc_temporal_regularization(logits)
+                temporal_regularization_loss = self.calc_temporal_regularization(logits, eval=True)
                 epoch_temporal_reg_loss += temporal_regularization_loss
 
             mae = F.l1_loss(preds, target.view(-1, 1))
