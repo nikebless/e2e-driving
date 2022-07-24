@@ -242,6 +242,14 @@ def parse_arguments():
     )
 
     argparser.add_argument(
+        '--temporal-regularization-type',
+        required=False,
+        choices=['crossentropy', 'l1', 'l2', 'emd'],
+        default='emd',
+        help='Type of temporal regularization used for EBM training.'
+    )
+
+    argparser.add_argument(
         '--debug',
         action='store_true',
         help='When true, debug mode is enabled.'
@@ -252,32 +260,33 @@ def parse_arguments():
 
 class TrainingConfig:
     def __init__(self, args):
-        self.model_type = args.model_type
-        self.dataset_folder = args.dataset_folder
-        self.input_modality = args.input_modality
-        self.lidar_channel = args.lidar_channel
-        self.camera_name = args.camera_name
-        self.output_modality = args.output_modality
-        self.n_waypoints = args.num_waypoints
-        self.learning_rate = args.learning_rate
-        self.weight_decay = args.weight_decay
-        self.patience = args.patience
-        self.max_epochs = args.max_epochs
-        self.batch_size = args.batch_size
         self.batch_sampler = args.batch_sampler
-        self.num_workers = args.num_workers
-        self.wandb_project = args.wandb_project
+        self.batch_size = args.batch_size
+        self.camera_name = args.camera_name
+        self.dataset_folder = args.dataset_folder
+        self.debug = args.debug
+        self.input_modality = args.input_modality
+        self.learning_rate = args.learning_rate
+        self.lidar_channel = args.lidar_channel
         self.loss = args.loss
         self.loss_discount_rate = args.loss_discount_rate
-        self.stochastic_optimizer_train_samples = args.stochastic_optimizer_train_samples
+        self.max_epochs = args.max_epochs
+        self.model_type = args.model_type
+        self.n_waypoints = args.num_waypoints
+        self.num_workers = args.num_workers
+        self.output_modality = args.output_modality
+        self.patience = args.patience
+        self.steering_bound = args.steering_bound
         self.stochastic_optimizer_inference_samples = args.stochastic_optimizer_inference_samples
         self.stochastic_optimizer_iters = args.stochastic_optimizer_iters
-        self.steering_bound = args.steering_bound
-        self.use_constant_samples = args.use_constant_samples
-        self.temporal_regularization = args.temporal_regularization
+        self.stochastic_optimizer_train_samples = args.stochastic_optimizer_train_samples
         self.temporal_group_size = args.temporal_group_size
+        self.temporal_regularization = args.temporal_regularization
         self.temporal_regularization_ignore_target = args.temporal_regularization_ignore_target
-        self.debug = args.debug
+        self.temporal_regularization_type = args.temporal_regularization_type
+        self.use_constant_samples = args.use_constant_samples
+        self.wandb_project = args.wandb_project
+        self.weight_decay = args.weight_decay
 
         log_format = "%(message)s"
         if self.debug:

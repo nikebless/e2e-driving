@@ -106,7 +106,7 @@ class DFOptimizerConst(DFOptimizer):
         super().__init__(ebm, config)
 
         if self.inference_samples != self.train_samples:
-            logging.warn('inference_samples is not equal to train_samples, which might cause poor performance when using constant samples')
+            logging.warn('inference_samples is not equal to train_samples, which will likely cause poor performance when using constant samples')
 
         lower_bound = self.bounds[0, 0]
         upper_bound = self.bounds[1, 0]

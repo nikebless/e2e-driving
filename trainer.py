@@ -46,6 +46,11 @@ class WeighedMSELoss(MSELoss):
         return (loss * self.weights).mean()
 
 
+def earth_mover_distance(input: Tensor, target: Tensor) -> Tensor:
+    '''From: https://discuss.pytorch.org/t/implementation-of-squared-earth-movers-distance-loss-function-for-ordinal-scale/107927/2'''
+    return torch.mean(torch.square(torch.cumsum(target, dim=-1) - torch.cumsum(input, dim=-1)))
+
+
 class Trainer:
 
     def __init__(self, model_name=None, train_conf: train.TrainingConfig = None):  # todo:rename target_name->output_modality
@@ -270,7 +275,7 @@ class Trainer:
 
             running_loss += loss.item()
             if temporal_reg_loss is not None:
-                running_temporal_reg_loss += temporal_reg_loss.item()
+                running_temporal_reg_loss += temporal_reg_loss
 
             progress_bar.update(1)
             progress_bar.set_description(f'epoch {epoch+1} | train loss: {(running_loss / (i + 1)):.4f} | temp reg loss: {running_temporal_reg_loss / (i+1):.4f}')
@@ -309,7 +314,7 @@ class Trainer:
                 all_predictions.extend(predictions.cpu().squeeze().numpy())
 
                 progress_bar.update(1)
-                progress_bar.set_description(f'epoch {epoch + 1} | train loss: {train_loss:.4f} | valid loss: {(epoch_loss / (i + 1)):.4f} | temp reg loss: {epoch_temporal_reg_loss / (i + 1):.4f}')
+                progress_bar.set_description(f'epoch {epoch + 1} | train loss: {train_loss:.4f} | valid loss: {(epoch_loss / (i + 1)):.4f}')
 
                 ask_batch_timestamp = time.time()
 
@@ -478,6 +483,13 @@ class ConditionalTrainer(Trainer):
 
 class EBMTrainer(Trainer):
 
+    temporal_regularization_options = {
+        'crossentropy': torch.nn.CrossEntropyLoss(),
+        'l1': torch.nn.L1Loss(),
+        'l2': torch.nn.MSELoss(),
+        'emd': earth_mover_distance,
+    }
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -502,7 +514,7 @@ class EBMTrainer(Trainer):
 
         inference_wrapper = optimizers.DFOptimizerConst if self.train_conf.use_constant_samples else optimizers.DFOptimizer
 
-        self.temporal_regularization_criterion = CrossEntropyLoss()
+        self.temporal_regularization_criterion = self.temporal_regularization_options[self.train_conf.temporal_regularization_type]
         self.inference_model = inference_wrapper(self.model, stochastic_optim_config)
         self.inference_model.to(self.device)
         self.steps = 0
@@ -524,6 +536,22 @@ class EBMTrainer(Trainer):
         )
 
         return optim_config, stochastic_optim_config
+
+    def calc_temporal_regularization(self, logits: Tensor, target_indices: Tensor = None) -> Tensor:
+        """
+        Calculate the temporal regularization loss for the given logits and target indices.
+        """
+
+        if self.train_conf.temporal_regularization_ignore_target and target_indices is not None:
+            mask = torch.ones_like(logits).scatter_(1, target_indices.unsqueeze(1), 0)
+            logits = logits[mask.bool()].view(logits.shape[0], logits.shape[1]-1)
+
+        odd_samples = logits[::2, :]
+        even_samples = logits[1::2, :]
+
+        if odd_samples.shape != even_samples.shape: return 0
+
+        return self.temporal_regularization_criterion(odd_samples, even_samples).item()
 
     def predict(self, _, dataloader):
         all_predictions = []
@@ -556,7 +584,6 @@ class EBMTrainer(Trainer):
         targets = torch.cat([target.unsqueeze(dim=1), negatives], dim=1)
         logging.debug(f'merged targets (should be [B, N+1, D]): {targets.shape} {targets.dtype}')
 
-
         # Generate a random permutation of the positives and negatives.
         permutation = torch.rand(targets.size(0), targets.size(1)).argsort(dim=1)
         logging.debug(f'permutation: {permutation.shape} {permutation.dtype}')
@@ -583,19 +610,8 @@ class EBMTrainer(Trainer):
         temporal_regularization_loss = None
 
         if self.train_conf.temporal_regularization:
-
-            # not sure why cross-entropy is negative for negative logits, but we need it to be positive, so torch.abs
-            # logits should only be ever negative in the very first few batches, so this shouldn't impact the training
-            index_start = 1 if self.train_conf.temporal_regularization_ignore_target else 0
-            regularized_logits = logits[:, index_start:]
-            logging.debug(f'logits.shape: {logits.shape}. regularized_logits.shape: {regularized_logits.shape}')
-
-            odd_samples = torch.abs(regularized_logits[::2, index_start:])
-            even_samples = torch.abs(regularized_logits[1::2, index_start:])
-
-            if odd_samples.shape == even_samples.shape:
-                temporal_regularization_loss = self.temporal_regularization_criterion(odd_samples, even_samples)
-                loss += self.train_conf.temporal_regularization * temporal_regularization_loss
+            temporal_regularization_loss = self.calc_temporal_regularization(logits, ground_truth)
+            loss += self.train_conf.temporal_regularization * temporal_regularization_loss
 
         self.optimizer.zero_grad(set_to_none=True)
         self.steps += 1
@@ -622,6 +638,7 @@ class EBMTrainer(Trainer):
 
             inputs = input['image'].to(self.device)
             target = target.to(self.device, torch.float32)
+            logging.debug(f'target.shape: {target.shape}, target.dtype: {target.dtype}, min: {target.min()}, max: {target.max()}')
 
             inference_start = time.time()
             preds, energy = inference_model(inputs)
@@ -634,19 +651,8 @@ class EBMTrainer(Trainer):
 
             if self.train_conf.temporal_regularization:
                 logits = -1 * energy
-
-                # not sure why cross-entropy is negative for negative logits, but we need it to be positive, so use torch.abs.
-                # logits should only be ever negative in the very first few batches, so this shouldn't impact the regularization, right?
-                index_start = 1 if self.train_conf.temporal_regularization_ignore_target else 0
-                regularized_logits = logits[:, index_start:]
-                logging.debug(f'logits.shape: {logits.shape}. regularized_logits.shape: {regularized_logits.shape}')
-
-                odd_samples = torch.abs(regularized_logits[::2, index_start:])
-                even_samples = torch.abs(regularized_logits[1::2, index_start:])
-
-                if odd_samples.shape == even_samples.shape:
-                    temporal_regularization_loss = self.temporal_regularization_criterion(odd_samples, even_samples)
-                    epoch_temporal_reg_loss += temporal_regularization_loss.item()
+                temporal_regularization_loss = self.calc_temporal_regularization(logits)
+                epoch_temporal_reg_loss += temporal_regularization_loss
 
             mae = F.l1_loss(preds, target.view(-1, 1))
             epoch_mae += mae.item()
