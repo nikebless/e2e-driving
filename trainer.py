@@ -544,7 +544,7 @@ class EBMTrainer(Trainer):
 
         if self.train_conf.temporal_regularization_ignore_target and not eval:
             # ignore (always changing) ground truth
-            logits[:, 1] = 0.
+            logits[:, 0] = 0.
 
         odd_samples = logits[::2, :]
         even_samples = logits[1::2, :]
