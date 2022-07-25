@@ -16,12 +16,17 @@ nohup python train.py \
     --dataset-folder /data/Bolt/dataset-new-small/summer2021 \
     --batch-size 512 \
     --num-workers 16 \
-    --wandb-project ibc \
     --stochastic-optimizer-train-samples 512 \
     --stochastic-optimizer-inference-samples 512 \
     --stochastic-optimizer-iters 3 \
     --steering-bound 4.5 \
     --use-constant-samples \
-    --temporal-regularization 0.1 \
+    --temporal-regularization 100 \
     --temporal-group-size 2 \
+    --temporal-regularization-ignore-target \
+    --temporal-regularization-type emd \
+    --temporal-regularization-schedule exponential \
+    --temporal-regularization-schedule-k 0.003 \
+    --temporal-regularization-schedule-n 400 \
+    --debug \
     &> runs/$(date +%s)-run.txt &
