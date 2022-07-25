@@ -47,8 +47,15 @@ class WeighedMSELoss(MSELoss):
 
 
 def earth_mover_distance(input: Tensor, target: Tensor) -> Tensor:
-    '''From: https://discuss.pytorch.org/t/implementation-of-squared-earth-movers-distance-loss-function-for-ordinal-scale/107927/2'''
-    return torch.mean(torch.square(torch.cumsum(target, dim=-1) - torch.cumsum(input, dim=-1)))
+    '''Adapted from: https://discuss.pytorch.org/t/implementation-of-squared-earth-movers-distance-loss-function-for-ordinal-scale/107927/2
+    Change: taking absolute instead of square, because the differences are very small.
+    '''
+
+    # convert to probability distribution
+    input = F.softmax(input, dim=-1)
+    target = F.softmax(target, dim=-1)
+
+    return torch.mean(torch.abs(torch.cumsum(input, dim=-1) - torch.cumsum(target, dim=-1)))
 
 
 class Trainer:
@@ -278,7 +285,7 @@ class Trainer:
                 running_temporal_reg_loss += temporal_reg_loss
 
             progress_bar.update(1)
-            progress_bar.set_description(f'epoch {epoch+1} | train loss: {(running_loss / (i + 1)):.4f} | temp reg loss: {running_temporal_reg_loss / (i+1):.4f}')
+            progress_bar.set_description(f'epoch {epoch+1} | train loss: {(running_loss / (i + 1)):.4f} | temp reg loss: {running_temporal_reg_loss / (i+1):.6f}')
 
             ask_batch_timestamp = time.time()
 
@@ -603,9 +610,6 @@ class EBMTrainer(Trainer):
         # to train the EBM.
         logits = -1.0 * energy
 
-        logging.debug(f'input to loss:')
-        logging.debug(f'logits: {logits.shape}')
-        logging.debug(f'ground truth: {ground_truth.shape}')
         loss = self.criterion(logits, ground_truth)
         temporal_regularization_loss = None
 
