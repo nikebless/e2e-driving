@@ -250,6 +250,29 @@ def parse_arguments():
     )
 
     argparser.add_argument(
+        '--temporal-regularization-schedule',
+        required=False,
+        choices=['constant', 'linear', 'exponential'],
+        default='constant',
+    )
+
+    argparser.add_argument(
+        '--temporal-regularization-schedule-k',
+        required=False,
+        type=float,
+        default=0.003,
+        help='Temporal regularization growth parameter.'
+    )
+
+    argparser.add_argument(
+        '--temporal-regularization-schedule-n',
+        required=False,
+        type=int,
+        default=400,
+        help='Number of learning steps for regularization weight to reach `temporal-regularization`.'
+    )
+
+    argparser.add_argument(
         '--debug',
         action='store_true',
         help='When true, debug mode is enabled.'
@@ -283,6 +306,9 @@ class TrainingConfig:
         self.temporal_group_size = args.temporal_group_size
         self.temporal_regularization = args.temporal_regularization
         self.temporal_regularization_ignore_target = args.temporal_regularization_ignore_target
+        self.temporal_regularization_schedule = args.temporal_regularization_schedule
+        self.temporal_regularization_schedule_k = args.temporal_regularization_schedule_k
+        self.temporal_regularization_schedule_n = args.temporal_regularization_schedule_n
         self.temporal_regularization_type = args.temporal_regularization_type
         self.use_constant_samples = args.use_constant_samples
         self.wandb_project = args.wandb_project

@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 import uuid
 
+import math
 import numpy as np
 import onnx
 import torch
@@ -285,7 +286,10 @@ class Trainer:
                 running_temporal_reg_loss += temporal_reg_loss
 
             progress_bar.update(1)
-            progress_bar.set_description(f'epoch {epoch+1} | train loss: {(running_loss / (i + 1)):.4f} | temp reg loss: {running_temporal_reg_loss / (i+1):.6f}')
+            pbar_description = f'epoch {epoch+1} | train loss: {(running_loss / (i + 1)):.4f} | temp reg loss: {running_temporal_reg_loss / (i+1):.4f}'
+            if hasattr(self, 'reg_weight'):
+                pbar_description += f' | reg weight: {self.reg_weight:.4f}'
+            progress_bar.set_description(pbar_description)
 
             ask_batch_timestamp = time.time()
 
@@ -525,6 +529,7 @@ class EBMTrainer(Trainer):
         self.inference_model = inference_wrapper(self.model, stochastic_optim_config)
         self.inference_model.to(self.device)
         self.steps = 0
+        self.reg_weight = self.train_conf.temporal_regularization
 
     def _initialize_config(self, train_conf):
         """Initialize train state based on config values."""
@@ -614,9 +619,23 @@ class EBMTrainer(Trainer):
         temporal_regularization_loss = None
 
         if self.train_conf.temporal_regularization:
+            # calculate weight
+            reg_weight = self.train_conf.temporal_regularization
+
+            if self.train_conf.temporal_regularization_schedule == 'exponential':
+                k = self.train_conf.temporal_regularization_schedule_k
+                reg_weight *= 1-math.exp(-1 * k * self.steps)
+            elif self.train_conf.temporal_regularization_schedule == 'linear':
+                n = self.train_conf.temporal_regularization_schedule_n
+                reg_weight *= self.steps * n
+
+            self.reg_weight = reg_weight
+            logging.debug('temporal regularization weight: {}'.format(reg_weight))
+
+            # calculcate loss
             logits_unshuffled = logits[torch.arange(logits.size(0)).unsqueeze(-1), torch.argsort(permutation)]
             temporal_regularization_loss = self.calc_temporal_regularization(logits_unshuffled)
-            loss += self.train_conf.temporal_regularization * temporal_regularization_loss
+            loss += reg_weight * temporal_regularization_loss
 
         self.optimizer.zero_grad(set_to_none=True)
         self.steps += 1
