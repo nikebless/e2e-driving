@@ -13,7 +13,7 @@
 #SBATCH --mem=60G
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:tesla:1
-#SBATCH --exclude=falcon2
+#SBATCH --exclude=falcon2,falcon3
 
 # Actual job command(s)
 
@@ -31,8 +31,13 @@ srun python -u train.py \
     --wandb-project ibc \
     --stochastic-optimizer-train-samples 1024 \
     --stochastic-optimizer-inference-samples 1024 \
-    --stochastic-optimizer-iters 3 \
+    --stochastic-optimizer-iters 0 \
     --steering-bound 4.5 \
     --use-constant-samples \
-    --temporal-regularization 0 \
     --temporal-group-size 2 \
+    --temporal-regularization 100 \
+    --temporal-regularization-type emd \
+    --temporal-regularization-ignore-target \
+    --temporal-regularization-schedule linear \
+    --temporal-regularization-schedule-k 0.0003 \
+    --temporal-regularization-schedule-n 2000 \
