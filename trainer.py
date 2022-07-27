@@ -563,7 +563,7 @@ class EBMTrainer(Trainer):
 
         if odd_samples.shape != even_samples.shape: return 0
 
-        return self.temporal_regularization_criterion(odd_samples, even_samples).item()
+        return self.temporal_regularization_criterion(odd_samples, even_samples)
 
     def predict(self, _, dataloader):
         all_predictions = []
@@ -641,7 +641,7 @@ class EBMTrainer(Trainer):
         self.steps += 1
 
         if temporal_regularization_loss is not None:
-            return energy, loss, temporal_regularization_loss
+            return energy, loss, temporal_regularization_loss.item()
 
         return energy, loss
 
@@ -676,7 +676,7 @@ class EBMTrainer(Trainer):
             if self.train_conf.temporal_regularization:
                 logits = -1 * energy
                 temporal_regularization_loss = self.calc_temporal_regularization(logits, eval=True)
-                epoch_temporal_reg_loss += temporal_regularization_loss
+                epoch_temporal_reg_loss += temporal_regularization_loss.item()
 
             mae = F.l1_loss(preds, target.view(-1, 1))
             epoch_mae += mae.item()
