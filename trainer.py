@@ -47,16 +47,17 @@ class WeighedMSELoss(MSELoss):
         return (loss * self.weights).mean()
 
 
-def earth_mover_distance(input: Tensor, target: Tensor) -> Tensor:
+def earth_mover_distance(input: Tensor, target: Tensor, square=False) -> Tensor:
     '''Adapted from: https://discuss.pytorch.org/t/implementation-of-squared-earth-movers-distance-loss-function-for-ordinal-scale/107927/2
-    Change: taking absolute instead of square, because the differences are very small.
+    Change: option to take absolute instead of square, because the differences are very small.
     '''
 
     # convert to probability distribution
     input = F.softmax(input, dim=-1)
     target = F.softmax(target, dim=-1)
+    diff_handler = torch.square if square else torch.abs
 
-    return torch.mean(torch.abs(torch.cumsum(input, dim=-1) - torch.cumsum(target, dim=-1)))
+    return torch.mean(diff_handler(torch.cumsum(input, dim=-1) - torch.cumsum(target, dim=-1)))
 
 
 class Trainer:
@@ -499,6 +500,7 @@ class EBMTrainer(Trainer):
         'l1': torch.nn.L1Loss(),
         'l2': torch.nn.MSELoss(),
         'emd': earth_mover_distance,
+        'emd-squared': lambda a, b: earth_mover_distance(a, b, True)
     }
 
     def __init__(self, *args, **kwargs):
