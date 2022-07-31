@@ -11,7 +11,7 @@ import torch
 from torch import Tensor
 from torch.nn import functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.nn import L1Loss, MSELoss, CrossEntropyLoss
+from torch.nn import L1Loss, MSELoss, CrossEntropyLoss, KLDivLoss
 
 from tqdm.auto import tqdm
 import wandb
@@ -49,7 +49,9 @@ class WeighedMSELoss(MSELoss):
 
 def earth_mover_distance(input: Tensor, target: Tensor, square=False) -> Tensor:
     '''Adapted from: https://discuss.pytorch.org/t/implementation-of-squared-earth-movers-distance-loss-function-for-ordinal-scale/107927/2
-    Change: option to take absolute instead of square, because the differences are very small.
+    Changes: 
+    - option to take absolute instead of square, because the differences are very small.
+    - mathematically correct averaging (divide by batch size, not total element count)
     '''
 
     # convert to probability distribution
@@ -57,8 +59,19 @@ def earth_mover_distance(input: Tensor, target: Tensor, square=False) -> Tensor:
     target = F.softmax(target, dim=-1)
     diff_handler = torch.square if square else torch.abs
 
-    return torch.mean(diff_handler(torch.cumsum(input, dim=-1) - torch.cumsum(target, dim=-1)))
+    return diff_handler(torch.cumsum(input, dim=-1) - torch.cumsum(target, dim=-1)).sum() / input.size(0) # mathematically correct average
 
+
+class KLDivLossCorrected(KLDivLoss):
+    def __init__(self, weights):
+        super().__init__(reduction='batchmean')
+        self.weights = weights
+
+    def forward(self, input: Tensor, target: Tensor) -> Tensor:
+        input = F.log_softmax(input, dim=-1)
+        target = F.softmax(target, dim=-1)
+
+        return super().forward(input, target)
 
 class Trainer:
 
@@ -500,7 +513,8 @@ class EBMTrainer(Trainer):
         'l1': torch.nn.L1Loss(),
         'l2': torch.nn.MSELoss(),
         'emd': earth_mover_distance,
-        'emd-squared': lambda a, b: earth_mover_distance(a, b, True)
+        'emd-squared': lambda a, b: earth_mover_distance(a, b, True),
+        'kldiv': KLDivLossCorrected(),
     }
 
     def __init__(self, *args, **kwargs):

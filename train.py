@@ -244,8 +244,8 @@ def parse_arguments():
     argparser.add_argument(
         '--temporal-regularization-type',
         required=False,
-        choices=['crossentropy', 'l1', 'l2', 'emd', 'emd-squared'],
-        default='emd',
+        choices=['crossentropy', 'l1', 'l2', 'emd', 'emd-squared', 'kldiv'],
+        default='l2',
         help='Type of temporal regularization used for EBM training.'
     )
 
