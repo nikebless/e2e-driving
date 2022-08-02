@@ -59,13 +59,12 @@ def earth_mover_distance(input: Tensor, target: Tensor, square=False) -> Tensor:
     target = F.softmax(target, dim=-1)
     diff_handler = torch.square if square else torch.abs
 
-    return diff_handler(torch.cumsum(input, dim=-1) - torch.cumsum(target, dim=-1)).sum() / input.size(0) # mathematically correct average
+    return diff_handler(torch.cumsum(input, dim=-1) - torch.cumsum(target, dim=-1)).sum() / input.size(0)
 
 
-class KLDivLossCorrected(KLDivLoss):
-    def __init__(self, weights):
+class KLDivLossWithSoftmax(KLDivLoss):
+    def __init__(self):
         super().__init__(reduction='batchmean')
-        self.weights = weights
 
     def forward(self, input: Tensor, target: Tensor) -> Tensor:
         input = F.log_softmax(input, dim=-1)
@@ -514,7 +513,7 @@ class EBMTrainer(Trainer):
         'l2': torch.nn.MSELoss(),
         'emd': earth_mover_distance,
         'emd-squared': lambda a, b: earth_mover_distance(a, b, True),
-        'kldiv': KLDivLossCorrected(),
+        'kldiv': KLDivLossWithSoftmax(),
     }
 
     def __init__(self, *args, **kwargs):

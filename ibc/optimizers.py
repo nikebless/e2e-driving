@@ -94,8 +94,7 @@ class DFOptimizer(nn.Module):
 
         # Return target with highest probability.
         energies = ebm(x, samples)
-        probs = F.softmax(-1.0 * energies, dim=-1)
-        best_idxs = probs.argmax(dim=-1)
+        best_idxs = energies.argmin(dim=-1)
         return samples[torch.arange(samples.size(0)), best_idxs, :], energies
 
 
