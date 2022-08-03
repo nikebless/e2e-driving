@@ -145,13 +145,11 @@ class NvidiaDataset(Dataset):
 
     def __init__(self, dataset_paths, transform=None, camera="front_wide", name="Nvidia dataset",
                  filter_turns=False, output_modality="steering_angle", n_branches=1, n_waypoints=6,
-                 metadata_file="nvidia_frames.csv", color_space="rgb", dataset_proportion=1.0,):
+                 metadata_file="nvidia_frames.csv", color_space="rgb", dataset_proportion=1.0):
         self.name = name
         self.metadata_file = metadata_file
         self.color_space = color_space
-        n_used_recordings = ceil(len(dataset_paths) * dataset_proportion)
-        print(f"Using {n_used_recordings} training recordings of {len(dataset_paths)} ({dataset_proportion*100:1f}%).")
-        self.dataset_paths = dataset_paths[:n_used_recordings]
+        self.dataset_paths = dataset_paths
         if transform:
             self.transform = transform
         else:
@@ -160,9 +158,7 @@ class NvidiaDataset(Dataset):
         self.output_modality = output_modality
         self.n_waypoints = n_waypoints
 
-        if self.output_modality == "waypoints":
-            self.target_size = 2 * self.n_waypoints
-        elif self.output_modality == "steering_angle":
+        if self.output_modality == "steering_angle":
             self.target_size = 1
         else:
             print(f"Unknown output modality {self.output_modality}")
@@ -172,6 +168,8 @@ class NvidiaDataset(Dataset):
 
         datasets = [self.read_dataset(dataset_path, camera) for dataset_path in self.dataset_paths]
         self.frames = pd.concat(datasets)
+        keep_n_frames = ceil(len(self.frames) * dataset_proportion)
+        self.frames = self.frames.head(keep_n_frames)
 
         if filter_turns:
             print("Filtering turns with blinker signal")
