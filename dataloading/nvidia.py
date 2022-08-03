@@ -150,7 +150,7 @@ class NvidiaDataset(Dataset):
         self.metadata_file = metadata_file
         self.color_space = color_space
         n_used_recordings = ceil(len(dataset_paths) * dataset_proportion)
-        print(f"Using {n_used_recordings} training recordings of {len(dataset_paths)} ({dataset_proportion*100:d}%).")
+        print(f"Using {n_used_recordings} training recordings of {len(dataset_paths)} ({dataset_proportion*100:1f}%).")
         self.dataset_paths = dataset_paths[:n_used_recordings]
         if transform:
             self.transform = transform
@@ -170,13 +170,7 @@ class NvidiaDataset(Dataset):
 
         self.n_branches = n_branches
 
-        if camera == 'all':
-            datasets = [self.read_dataset(dataset_path, "left") for dataset_path in dataset_paths] + \
-                       [self.read_dataset(dataset_path, "right") for dataset_path in dataset_paths] + \
-                       [self.read_dataset(dataset_path, "front_wide") for dataset_path in dataset_paths]
-
-        else:
-            datasets = [self.read_dataset(dataset_path, camera) for dataset_path in dataset_paths]
+        datasets = [self.read_dataset(dataset_path, camera) for dataset_path in self.dataset_paths]
         self.frames = pd.concat(datasets)
 
         if filter_turns:
@@ -394,7 +388,7 @@ class NvidiaDatasetGrouped(NvidiaDataset):
 
 class NvidiaTrainDataset(NvidiaDatasetGrouped):
     def __init__(self, root_path, output_modality="steering_angle", n_branches=3, n_waypoints=6,
-                 camera="front_wide", **args):
+                 camera="front_wide", **kwargs):
         train_paths = [
             root_path / "2021-05-20-12-36-10_e2e_sulaoja_20_30",
             root_path / "2021-05-20-12-43-17_e2e_sulaoja_20_30",
@@ -448,7 +442,7 @@ class NvidiaTrainDataset(NvidiaDatasetGrouped):
 
         tr = transforms.Compose([Normalize()])
         super().__init__(train_paths, tr, camera=camera,  output_modality=output_modality, n_branches=n_branches,
-                         n_waypoints=n_waypoints, **args)
+                         n_waypoints=n_waypoints, **kwargs)
 
 
 class NvidiaValidationDataset(NvidiaDatasetGrouped):

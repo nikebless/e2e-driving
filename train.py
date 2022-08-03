@@ -376,7 +376,7 @@ def load_data(train_conf):
     if train_conf.input_modality == "nvidia-camera":
         trainset = NvidiaTrainDataset(dataset_path, train_conf.output_modality,
                                       train_conf.n_branches, n_waypoints=train_conf.n_waypoints,
-                                      camera=train_conf.camera_name, group_size=group_size)
+                                      camera=train_conf.camera_name, group_size=group_size, dataset_proportion=train_conf.dataset_proportion)
         validset = NvidiaValidationDataset(dataset_path, train_conf.output_modality, train_conf.n_branches,
                                            n_waypoints=train_conf.n_waypoints, group_size=group_size)
     else:

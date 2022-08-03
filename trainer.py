@@ -12,6 +12,7 @@ from torch import Tensor
 from torch.nn import functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.nn import L1Loss, MSELoss, CrossEntropyLoss, KLDivLoss
+from torch.distributions import Categorical
 
 from tqdm.auto import tqdm
 import wandb
@@ -21,8 +22,7 @@ import logging
 from metrics.metrics import calculate_open_loop_metrics, calculate_trajectory_open_loop_metrics
 
 from ibc import optimizers
-from pilotnet import PilotNet, PilotNetConditional, PilotnetControl, PilotnetEBM
-from efficient_net import effnetv2_s
+from pilotnet import PilotNet, PilotnetEBM
 from scripts.pt_to_onnx import convert_pt_to_onnx
 
 import train
@@ -71,6 +71,11 @@ class KLDivLossWithSoftmax(KLDivLoss):
         target = F.softmax(target, dim=-1)
 
         return super().forward(input, target)
+
+
+def calculate_step_uncertainty(energy: Tensor) -> Tensor:
+    '''Calculate the uncertainty of an EBM prediction.'''
+    return Categorical(F.softmax(-energy, dim=-1)).entropy().mean() / torch.log(torch.tensor(energy.shape[-1]))
 
 class Trainer:
 
@@ -133,6 +138,7 @@ class Trainer:
             
             temp_reg_loss = None
             valid_temp_reg_loss = None
+            valid_uncertainty = None
 
             progress_bar = tqdm(total=len(train_loader), smoothing=0)
             epoch_results = self.train_epoch(model, train_loader, optimizer, criterion, progress_bar, epoch)
@@ -145,8 +151,8 @@ class Trainer:
             epoch_results = self.evaluate(model, valid_loader, criterion, progress_bar, epoch, train_loss)
             if len(epoch_results) == 2:
                 valid_loss, predictions = epoch_results
-            elif len(epoch_results) == 3:
-                valid_loss, predictions, valid_temp_reg_loss = epoch_results
+            else:
+                valid_loss, predictions, valid_temp_reg_loss, valid_uncertainty = epoch_results
 
             scheduler.step(valid_loss)
 
@@ -164,6 +170,7 @@ class Trainer:
             metrics = self.calculate_metrics(fps, predictions, valid_loader)
             metrics['temporal_reg_loss'] = temp_reg_loss
             metrics['valid_temporal_reg_loss'] = valid_temp_reg_loss
+            metrics['valid_uncertainty'] = valid_uncertainty
             # todo: this if elif is getting bad, abstract to separate classes
             if self.target_name == "steering_angle":
                 whiteness = metrics['whiteness']
@@ -382,129 +389,6 @@ class PilotNetTrainer(Trainer):
         return predictions, criterion(predictions, target_values)
 
 
-class EfficientNetTrainer(Trainer):
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        train_conf = kwargs['train_conf']
-
-        self.model = effnetv2_s()
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=train_conf.learning_rate, betas=(0.9, 0.999),
-                                           eps=1e-08, weight_decay=train_conf.weight_decay, amsgrad=False)
-        self.model = self.model.to(self.device)
-        self.criterion = self.criterion.to(self.device)
-
-    def predict(self, model, dataloader):
-        all_predictions = []
-        model.eval()
-
-        with torch.no_grad():
-            progress_bar = tqdm(total=len(dataloader), smoothing=0)
-            progress_bar.set_description("Model predictions")
-            for i, (data, target_values, condition_mask) in enumerate(dataloader):
-                inputs = data['image'].to(self.device)
-                predictions = model(inputs)
-                all_predictions.extend(predictions.cpu().squeeze().numpy())
-                progress_bar.update(1)
-
-        return np.array(all_predictions)
-
-    def train_batch(self, model, data, target_values, condition_mask, criterion):
-        inputs = data['image'].to(self.device)
-        target_values = target_values.to(self.device)
-        predictions = model(inputs)
-        return predictions, criterion(predictions, target_values)
-
-
-class ControlTrainer(Trainer):
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        train_conf = kwargs['train_conf']
-
-        self.model = PilotnetControl(train_conf.n_input_channels, train_conf.n_outputs)
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=train_conf.learning_rate, betas=(0.9, 0.999),
-                                           eps=1e-08, weight_decay=train_conf.weight_decay, amsgrad=False)
-        self.model = self.model.to(self.device)
-        self.criterion = self.criterion.to(self.device)
-
-    def predict(self, model, dataloader):
-        all_predictions = []
-        model.eval()
-
-        with torch.no_grad():
-            progress_bar = tqdm(total=len(dataloader), smoothing=0)
-            progress_bar.set_description("Model predictions")
-            for i, (data, target_values, condition_mask) in enumerate(dataloader):
-                inputs = data['image'].to(self.device)
-                turn_signal = data['turn_signal']
-                control = F.one_hot(turn_signal, 3).to(self.device)
-                predictions = model(inputs, control)
-                all_predictions.extend(predictions.cpu().squeeze().numpy())
-                progress_bar.update(1)
-
-        return np.array(all_predictions)
-
-    def train_batch(self, model, data, target_values, condition_mask, criterion):
-        inputs = data['image'].to(self.device)
-        target_values = target_values.to(self.device)
-        turn_signal = data['turn_signal']
-        control = F.one_hot(turn_signal, 3).to(self.device)
-
-        predictions = model(inputs, control)
-        return predictions, criterion(predictions, target_values)
-
-    def create_onxx_input(self, data):
-        image_input = data[0]['image'].to(self.device)
-        turn_signal = data[0]['turn_signal']
-        control = F.one_hot(turn_signal, 3).to(torch.float32).to(self.device)
-        return image_input, control
-
-
-class ConditionalTrainer(Trainer):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        train_conf = kwargs['train_conf']
-
-        self.model = PilotNetConditional(train_conf.n_input_channels, train_conf.n_outputs, train_conf.n_branches)
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=train_conf.learning_rate, betas=(0.9, 0.999),
-                                           eps=1e-08, weight_decay=train_conf.weight_decay, amsgrad=False)
-        self.model = self.model.to(self.device)
-        self.criterion = self.criterion.to(self.device)
-
-    def predict(self, model, dataloader):
-        all_predictions = []
-        model.eval()
-
-        with torch.no_grad():
-            progress_bar = tqdm(total=len(dataloader), smoothing=0)
-            progress_bar.set_description("Model predictions")
-            for i, (data, target_values, condition_mask) in enumerate(dataloader):
-                inputs = data['image'].to(self.device)
-                predictions = model(inputs)
-                masked_predictions = predictions[condition_mask == 1]
-                masked_predictions = masked_predictions.reshape(predictions.shape[0], -1)
-                all_predictions.extend(masked_predictions.cpu().squeeze().numpy())
-                progress_bar.update(1)
-
-        return np.array(all_predictions)
-
-    def train_batch(self, model, data, target_values, condition_mask, criterion):
-        inputs = data['image'].to(self.device)
-        target_values = target_values.to(self.device)
-        condition_mask = condition_mask.to(self.device)
-
-        predictions = model(inputs)
-
-        loss = criterion(predictions*condition_mask, target_values) * self.n_conditional_branches
-
-        masked_predictions = predictions[condition_mask == 1]
-        return masked_predictions.reshape(predictions.shape[0], -1), loss
-
-
 class EBMTrainer(Trainer):
 
     temporal_regularization_options = {
@@ -670,6 +554,7 @@ class EBMTrainer(Trainer):
 
         epoch_mae = 0.0
         epoch_temporal_reg_loss = 0.0
+        epoch_entropy = 0.0
         ask_batch_timestamp = time.time()
         for i, (input, target, _) in enumerate(iterator):
             recv_batch_timestap = time.time()
@@ -694,7 +579,9 @@ class EBMTrainer(Trainer):
                 epoch_temporal_reg_loss += temporal_regularization_loss.item()
 
             mae = F.l1_loss(preds, target.view(-1, 1))
+            entropy = calculate_step_uncertainty(energy)
             epoch_mae += mae.item()
+            epoch_entropy += entropy.item()
 
             all_predictions.extend(preds.cpu().squeeze().numpy())
 
@@ -705,8 +592,9 @@ class EBMTrainer(Trainer):
 
         avg_mae = epoch_mae / len(iterator)
         avg_temp_reg_loss = epoch_temporal_reg_loss / len(iterator)
+        avg_entropy = epoch_entropy / len(iterator)
         result = np.array(all_predictions)
-        return avg_mae, result, avg_temp_reg_loss
+        return avg_mae, result, avg_temp_reg_loss, avg_entropy
 
     def save_onnx(self, _, __):
         pt_models = [f'{self.save_dir}/last.pt', f'{self.save_dir}/best.pt']
