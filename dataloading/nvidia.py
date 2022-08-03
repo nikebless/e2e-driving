@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import pandas as pd
 import torch
+from math import ceil
 
 from torch.utils.data import Dataset
 from torch.utils.data._utils.collate import default_collate
@@ -144,11 +145,13 @@ class NvidiaDataset(Dataset):
 
     def __init__(self, dataset_paths, transform=None, camera="front_wide", name="Nvidia dataset",
                  filter_turns=False, output_modality="steering_angle", n_branches=1, n_waypoints=6,
-                 metadata_file="nvidia_frames.csv", color_space="rgb"):
+                 metadata_file="nvidia_frames.csv", color_space="rgb", dataset_proportion=1.0,):
         self.name = name
         self.metadata_file = metadata_file
         self.color_space = color_space
-        self.dataset_paths = dataset_paths
+        n_used_recordings = ceil(len(dataset_paths) * dataset_proportion)
+        print(f"Using {n_used_recordings} training recordings of {len(dataset_paths)} ({dataset_proportion*100:d}%).")
+        self.dataset_paths = dataset_paths[:n_used_recordings]
         if transform:
             self.transform = transform
         else:
@@ -450,7 +453,7 @@ class NvidiaTrainDataset(NvidiaDatasetGrouped):
 
 class NvidiaValidationDataset(NvidiaDatasetGrouped):
     # todo: remove default parameters
-    def __init__(self, root_path, output_modality="steering_angle", n_branches=3, n_waypoints=6, camera="front_wide", **args):
+    def __init__(self, root_path, output_modality="steering_angle", n_branches=3, n_waypoints=6, camera="front_wide", **kwargs):
         valid_paths = [
             root_path / "2021-05-28-15-19-48_e2e_sulaoja_20_30",
             root_path / "2021-06-07-14-20-07_e2e_rec_ss6",
@@ -467,47 +470,4 @@ class NvidiaValidationDataset(NvidiaDatasetGrouped):
 
         tr = transforms.Compose([Normalize()])
         super().__init__(valid_paths, tr, camera=camera, output_modality=output_modality, n_branches=n_branches,
-                         n_waypoints=n_waypoints, **args)
-
-
-class NvidiaWinterTrainDataset(NvidiaDataset):
-    def __init__(self, root_path, output_modality="steering_angle",
-                 n_branches=3, n_waypoints=6, augment_conf=AugmentationConfig(), **args):
-        train_paths = [
-
-            root_path / "2022-01-28-10-21-14_e2e_rec_peipsiaare_forward",
-            root_path / "2022-01-28-12-46-59_e2e_rec_peipsiaare_backward",
-            root_path / "2022-01-14-10-05-16_e2e_rec_raanitsa_forward",
-            root_path / "2022-01-14-10-50-05_e2e_rec_raanitsa_backward",
-            root_path / "2022-01-14-11-54-33_e2e_rec_kambja_forward2",
-            root_path / "2022-01-14-12-21-40_e2e_rec_kambja_forward2_continue",
-            root_path / "2022-01-14-13-09-05_e2e_rec_kambja_backward",
-            root_path / "2022-01-14-13-18-36_e2e_rec_kambja_backward_continue",
-            root_path / "2022-01-14-12-35-13_e2e_rec_neeruti_forward",
-            root_path / "2022-01-14-12-45-51_e2e_rec_neeruti_backward",
-            root_path / "2022-01-18-13-03-03_e2e_rec_arula_backward",
-            root_path / "2022-01-18-13-43-33_e2e_rec_otepaa_forward",
-            root_path / "2022-01-18-13-52-35_e2e_rec_otepaa_forward",
-            root_path / "2022-01-18-13-56-22_e2e_rec_otepaa_forward",
-            root_path / "2022-01-18-14-12-14_e2e_rec_otepaa_backward",
-            root_path / "2022-01-18-15-20-35_e2e_rec_kanepi_forward",
-            root_path / "2022-01-18-15-49-26_e2e_rec_kanepi_backwards",
-        ]
-
-        tr = transforms.Compose([AugmentImage(augment_config=augment_conf), Normalize()])
-        super().__init__(train_paths, tr, output_modality=output_modality, n_branches=n_branches, n_waypoints=n_waypoints, **args)
-
-
-class NvidiaWinterValidationDataset(NvidiaDataset):
-    def __init__(self, root_path, output_modality="steering_angle", n_branches=3, n_waypoints=6, **args):
-        valid_paths = [
-            root_path / "2022-01-18-12-37-01_e2e_rec_arula_forward",
-            root_path / "2022-01-18-12-47-32_e2e_rec_arula_forward_continue",
-            root_path / "2022-01-28-14-47-23_e2e_rec_elva_forward",
-            root_path / "2022-01-28-15-09-01_e2e_rec_elva_backward",
-            root_path / "2022-01-25-15-25-15_e2e_rec_vahi_forward",
-            root_path / "2022-01-25-15-34-01_e2e_rec_vahi_backwards",
-        ]
-
-        tr = transforms.Compose([Normalize()])
-        super().__init__(valid_paths, tr, output_modality=output_modality, n_branches=n_branches, n_waypoints=n_waypoints, **args)
+                         n_waypoints=n_waypoints, **kwargs)

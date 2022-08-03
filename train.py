@@ -9,13 +9,9 @@ import numpy as np
 import pandas as pd
 import torch
 import wandb
-from torch.utils.data import ConcatDataset, WeightedRandomSampler
-#from torchsummary import summary
+from torch.utils.data import WeightedRandomSampler
 
-from dataloading.nvidia import NvidiaTrainDataset, NvidiaValidationDataset, NvidiaWinterTrainDataset, \
-    NvidiaWinterValidationDataset, AugmentationConfig
-from dataloading.ouster import OusterTrainDataset, OusterValidationDataset
-from pilotnet import PilotNetConditional
+from dataloading.nvidia import NvidiaTrainDataset, NvidiaValidationDataset
 import trainer as trainers
 
 
@@ -31,14 +27,15 @@ def parse_arguments():
     argparser.add_argument(
         '--model-type',
         required=True,
-        choices=['pilotnet', 'pilotnet-conditional', 'pilotnet-control', 'efficientnet', 'pilotnet-ebm'],
+        choices=['pilotnet', 'pilotnet-ebm'],
         help='Defines which model will be trained.'
     )
 
     argparser.add_argument(
         '--input-modality',
-        required=True,
-        choices=['nvidia-camera', 'nvidia-camera-winter', 'nvidia-camera-all', 'ouster-lidar'],
+        required=False,
+        default='nvidia-camera',
+        choices=['nvidia-camera'],
     )
 
     argparser.add_argument(
@@ -278,6 +275,14 @@ def parse_arguments():
         help='When true, debug mode is enabled.'
     )
 
+    argparser.add_argument(
+        '--dataset-proportion',
+        required=False,
+        type=float,
+        default=1.0,
+        help='Proportion of training set recordings to use for training.'
+    )
+
     return argparser.parse_args()
 
 
@@ -287,6 +292,7 @@ class TrainingConfig:
         self.batch_size = args.batch_size
         self.camera_name = args.camera_name
         self.dataset_folder = args.dataset_folder
+        self.dataset_proportion = args.dataset_proportion
         self.debug = args.debug
         self.input_modality = args.input_modality
         self.learning_rate = args.learning_rate
@@ -329,12 +335,12 @@ class TrainingConfig:
             print(f"Uknown output modality {self.output_modality}")
             sys.exit()
 
-        self.n_branches = 3 if self.model_type == "pilotnet-conditional" else 1
+        self.n_branches = 1
         self.fps = 10 if self.input_modality == "ouster-lidar" else 30
         self.pretrained_model = args.pretrained_model
 
 
-def train_model(model_name, train_conf, augment_conf):
+def train_model(model_name, train_conf):
 
     print(f"Training model {model_name}, wandb_project={train_conf.wandb_project}")
     if train_conf.wandb_project:
@@ -344,49 +350,22 @@ def train_model(model_name, train_conf, augment_conf):
 
         wandb.init(project=train_conf.wandb_project, config=train_conf, **args)
     print('train_conf: ', train_conf.__dict__)
-    print('augment_conf: ', augment_conf.__dict__)
 
-    train_loader, valid_loader = load_data(train_conf, augment_conf)
+    train_loader, valid_loader = load_data(train_conf)
 
     if train_conf.model_type == 'pilotnet':
         trainer = trainers.PilotNetTrainer(model_name=model_name, train_conf=train_conf)
-    elif train_conf.model_type == "pilotnet-control":
-        trainer = trainers.ControlTrainer(model_name=model_name, train_conf=train_conf)
-    elif train_conf.model_type == "pilotnet-conditional":
-        trainer = trainers.ConditionalTrainer(model_name=model_name, train_conf=train_conf)
-    elif train_conf.model_type == "efficientnet":
-        trainer = trainers.EfficientNetTrainer(model_name=model_name, train_conf=train_conf)
     elif train_conf.model_type == "pilotnet-ebm":
         trainer = trainers.EBMTrainer(model_name=model_name, train_conf=train_conf)
     else:
-        trainer = trainers.ConditionalTrainer(model_name=model_name, train_conf=train_conf)
-
-    #summary(model, input_size=(3, 660, 172), device="cpu")
-    #summary(model, input_size=(3, 264, 68), device="cpu")
-
-    if train_conf.pretrained_model:
-        print(f"Initializing weights with pretrained model: {train_conf.pretrained_model}")
-        pretrained_model = load_model(train_conf.pretrained_model,
-                                      train_conf.n_input_channels,
-                                      train_conf.n_outputs,
-                                      n_branches=1)
-        trainer.model.features.load_state_dict(pretrained_model.features.state_dict())
-        for i in range(train_conf.n_branches):
-            trainer.model.conditional_branches[i].load_state_dict(pretrained_model.conditional_branches[0].state_dict())
+        print(f"Unknown model type {train_conf.model_type}")
+        sys.exit()
 
     trainer.train(train_loader, valid_loader, train_conf.max_epochs,
                   train_conf.patience, train_conf.fps)
 
 
-def load_model(model_name, n_input_channels=3, n_outputs=1, n_branches=1):
-    model = PilotNetConditional(n_input_channels=n_input_channels, n_outputs=n_outputs, n_branches=n_branches)
-    model.load_state_dict(torch.load(f"models/{model_name}/best.pt"))
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model.to(device)
-    return model
-
-
-def load_data(train_conf, augment_conf):
+def load_data(train_conf):
     print(f"Reading {train_conf.input_modality} data from {train_conf.dataset_folder}, "
           f"camera name={train_conf.camera_name}, lidar_channel={train_conf.lidar_channel}, "
           f"output_modality={train_conf.output_modality}")
@@ -400,15 +379,6 @@ def load_data(train_conf, augment_conf):
                                       camera=train_conf.camera_name, group_size=group_size)
         validset = NvidiaValidationDataset(dataset_path, train_conf.output_modality, train_conf.n_branches,
                                            n_waypoints=train_conf.n_waypoints, group_size=group_size)
-    elif train_conf.input_modality == "nvidia-camera-winter":
-        trainset = NvidiaWinterTrainDataset(dataset_path, train_conf.output_modality,
-                                            train_conf.n_branches, n_waypoints=train_conf.n_waypoints,
-                                            augment_conf=augment_conf)
-        validset = NvidiaWinterValidationDataset(dataset_path, train_conf.output_modality,
-                                                 train_conf.n_branches, n_waypoints=train_conf.n_waypoints)
-    elif train_conf.input_modality == "ouster-lidar":
-        trainset = OusterTrainDataset(dataset_path, train_conf.output_modality)
-        validset = OusterValidationDataset(dataset_path, train_conf.output_modality)
     else:
         print(f"Uknown input modality {train_conf.input_modality}")
         sys.exit()
@@ -468,5 +438,4 @@ if __name__ == "__main__":
     print('train.py PID:', os.getpid(), 'hostname:', socket.gethostname())
     args = parse_arguments()
     train_config = TrainingConfig(args)
-    aug_config = AugmentationConfig(args.aug_color_prob, args.aug_noise_prob, args.aug_blur_prob)
-    train_model(args.model_name, train_config, aug_config)
+    train_model(args.model_name, train_config)
