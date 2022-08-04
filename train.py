@@ -234,7 +234,7 @@ def parse_arguments():
         '--temporal-regularization-ignore-target',
         required=False,
         action='store_true',
-        default=False,
+        default=True,
         help='Ignore true target action for temporal regularization. Only regularize the negatives.'
     )
 
@@ -352,6 +352,7 @@ def train_model(model_name, train_conf):
     print('train_conf: ', train_conf.__dict__)
 
     train_loader, valid_loader = load_data(train_conf)
+    wandb.config.update({"train_frames": len(train_loader.dataset.frames)})
 
     if train_conf.model_type == 'pilotnet':
         trainer = trainers.PilotNetTrainer(model_name=model_name, train_conf=train_conf)
