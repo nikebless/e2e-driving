@@ -1,0 +1,22 @@
+#!/bin/bash
+
+#SBATCH --job-name="Extract driving data from thesis evaluation drives"
+#SBATCH --time=23:59:00
+#SBATCH --cpus-per-task=1
+#SBATCH --partition=main
+#SBATCH --mem=40G
+
+#SBATCH --array=0-8
+BAGS=(
+    '/data/Bolt/bagfiles/2022-08-04-16-33-18_elva_back_ebm_regularized_v1.bag' \
+    '/data/Bolt/bagfiles/2022-08-04-16-45-09_elva_forward_ebm_regularized_v1.bag' \
+    '/data/Bolt/bagfiles/2022-08-04-16-59-31_elva_back_ebm_regularized_v2.bag' \
+    '/data/Bolt/bagfiles/2022-08-04-17-11-04_elva_forward_ebm_regularized_v2.bag' \
+    '/data/Bolt/bagfiles/2022-08-04-17-21-58_elva_back_ebm_regularized_v3.bag' \
+    '/data/Bolt/bagfiles/2022-08-04-17-33-33_elva_forward_ebm_regularized_v3.bag' \
+    '/data/Bolt/bagfiles/2022-08-04-17-51-50_elva_back_ebm_unregularized_v1.bag' \
+    '/data/Bolt/bagfiles/2022-08-04-18-03-44_elva_forward_ebm_unregularized_v1.bag' \
+)
+
+
+srun ./extract_rocket.sh ${BAGS[$SLURM_ARRAY_TASK_ID]}  /gpfs/space/projects/Bolt/drives-nikita-thesis
