@@ -28,7 +28,7 @@ def convert_pt_to_onnx(model_path, batch_size, output_path, with_choice, n_sampl
             iters=iters,
         )
         inference_wrapper = optimizers.DFOptimizerConst if args['use_constant_samples'] else optimizers.DFOptimizer
-        model = inference_wrapper(model, stochastic_optim_config, batch_size=batch_size)
+        model = inference_wrapper(model, stochastic_optim_config)
 
     model.load_state_dict(torch.load(model_path))
     model.to(device)
