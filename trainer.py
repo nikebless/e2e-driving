@@ -256,7 +256,7 @@ class Trainer:
 
         data = iter(valid_loader).next()
         sample_inputs = self.create_onxx_input(data)
-        torch.onnx.export(model, sample_inputs, f"{self.save_dir}/best.onnx")
+        torch.onnx.export(model, sample_inputs, f"{self.save_dir}/best.onnx", dynamic_axes={'input.1': {0: 'batch'}})
         onnx.checker.check_model(f"{self.save_dir}/best.onnx")
         if self.wandb_logging:
             wandb.save(f"{self.save_dir}/best.onnx")
@@ -264,7 +264,7 @@ class Trainer:
         model.load_state_dict(torch.load(f"{self.save_dir}/last.pt"))
         model.to(self.device)
 
-        torch.onnx.export(model, sample_inputs, f"{self.save_dir}/last.onnx")
+        torch.onnx.export(model, sample_inputs, f"{self.save_dir}/last.onnx", dynamic_axes={'input.1': {0: 'batch'}})
         onnx.checker.check_model(f"{self.save_dir}/last.onnx")
         if self.wandb_logging:
             wandb.save(f"{self.save_dir}/last.onnx")
