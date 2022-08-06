@@ -9,17 +9,18 @@ from sklearn.neighbors import BallTree
 
 STEERING_ANGLE_RATIO = 14.7
 
-def calculate_closed_loop_metrics(model_frames, expert_frames, fps=30, failure_rate_threshold=1.0):
+def calculate_closed_loop_metrics(model_frames, expert_frames, cmd_frames, fps=30, failure_rate_threshold=1.0):
 
     lat_errors = calculate_lateral_errors(model_frames, expert_frames, True)
 
     autonomous_frames = model_frames[model_frames.autonomous].reset_index(drop=True)
     model_steering = autonomous_frames.steering_angle.to_numpy() / np.pi * 180
-    cmd_model_steering = autonomous_frames.cmd_steering_angle.to_numpy() / np.pi * 180
+    cmd_model_steering = cmd_frames.cmd_steering_angle.to_numpy() / np.pi * 180
     cmd_model_steering = cmd_model_steering * STEERING_ANGLE_RATIO
+    cmd_model_steering_timestamps = cmd_frames['index'].to_numpy()
     true_steering = expert_frames.steering_angle.to_numpy() / np.pi * 180
-    whiteness = calculate_whiteness(model_steering, fps)
-    cmd_whiteness = calculate_whiteness(cmd_model_steering, fps)
+    whiteness = calculate_whiteness(model_steering, fps) # "effective" whiteness
+    cmd_whiteness = calculate_whiteness(cmd_model_steering, fps, timestamps=cmd_model_steering_timestamps) # prediction whiteness
     expert_whiteness = calculate_whiteness(true_steering, fps)
 
     max = lat_errors.max()
@@ -112,11 +113,18 @@ def calculate_trajectory_open_loop_metrics(predicted_waypoints, true_waypoints, 
     }
 
 
-def calculate_whiteness(steering_angles, fps=30):
+def calculate_whiteness(steering_angles, fps=30, timestamps=None):
     current_angles = steering_angles[:-1]
     next_angles = steering_angles[1:]
     delta_angles = next_angles - current_angles
-    whiteness = np.sqrt(((delta_angles * fps) ** 2).mean())
+
+    if timestamps is None:
+        whiteness = np.sqrt(((delta_angles * fps) ** 2).mean())
+    else:
+        current_timestamps = timestamps[:-1] #.astype(np.float32)
+        next_timestamps = timestamps[1:] #.astype(np.float32)
+        delta_times = (next_timestamps - current_timestamps).astype(np.float32) / 1_000_000_000 # original timestamps are in nanoseconds
+        whiteness = np.sqrt(((delta_angles / delta_times) ** 2).mean())
     return whiteness
 
 
@@ -181,6 +189,14 @@ def read_frames_driving(dataset_paths, filename="nvidia_frames.csv"):
     return frames_df
 
 
+def read_cmd_frames_driving(dataset_paths, filename="vehicle_cmd.csv"):
+    datasets = [pd.read_csv(dataset_path / filename) for dataset_path in dataset_paths]
+    frames_df = pd.concat(datasets)
+    frames_df['index'] = frames_df["index"].astype('datetime64[ns]')
+
+    return frames_df
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
@@ -213,10 +229,8 @@ if __name__ == "__main__":
 
     if args.input_modality == "nvidia-camera":
         frames_filename = "nvidia_frames.csv"
+        cmd_frames_filename = "vehicle_cmd.csv"
         fps = 30
-    elif args.input_modality == "ouster-lidar":
-        frames_filename = "lidar_frames.csv"
-        fps = 10
     else:
         print("Uknown input modality")
         sys.exit()
@@ -228,5 +242,6 @@ if __name__ == "__main__":
     root_path = Path(args.root_path)
     drive_ds = [root_path / dataset_path for dataset_path in args.drive_datasets]
     model_frames = read_frames_driving(drive_ds, frames_filename)
+    model_cmd_frames = read_cmd_frames_driving(drive_ds, cmd_frames_filename)
 
-    print(calculate_closed_loop_metrics(model_frames, expert_frames, fps=fps))
+    print(calculate_closed_loop_metrics(model_frames, expert_frames, model_cmd_frames, fps=fps))

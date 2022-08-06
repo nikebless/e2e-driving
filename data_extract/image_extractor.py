@@ -252,6 +252,7 @@ class NvidiaDriveImporter:
 
         filtered_df = merged.loc[front_wide_camera_df.index]
         filtered_df.to_csv(root_folder / "nvidia_frames.csv", header=True)
+        vehicle_cmd_df.to_csv(root_folder / "vehicle_cmd.csv", header=True)
 
 
         if self.exract_lidar:
