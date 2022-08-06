@@ -9,7 +9,7 @@ from sklearn.neighbors import BallTree
 
 STEERING_ANGLE_RATIO = 14.7
 
-def calculate_closed_loop_metrics(model_frames, expert_frames, cmd_frames, fps=30, failure_rate_threshold=1.0):
+def calculate_closed_loop_metrics(model_frames, expert_frames, cmd_frames, fps=30, failure_rate_threshold=1.0, distance=None, interventions=None):
 
     lat_errors = calculate_lateral_errors(model_frames, expert_frames, True)
 
@@ -17,7 +17,7 @@ def calculate_closed_loop_metrics(model_frames, expert_frames, cmd_frames, fps=3
     model_steering = autonomous_frames.steering_angle.to_numpy() / np.pi * 180
     cmd_model_steering = cmd_frames.cmd_steering_angle.to_numpy() / np.pi * 180
     cmd_model_steering = cmd_model_steering * STEERING_ANGLE_RATIO
-    cmd_model_steering_timestamps = cmd_frames['index'].to_numpy()
+    cmd_model_steering_timestamps = cmd_frames['index'].astype('datetime64[ns]').to_numpy()
     true_steering = expert_frames.steering_angle.to_numpy() / np.pi * 180
     whiteness = calculate_whiteness(model_steering, fps) # "effective" whiteness
     cmd_whiteness = calculate_whiteness(cmd_model_steering, fps, timestamps=cmd_model_steering_timestamps) # prediction whiteness
@@ -27,8 +27,8 @@ def calculate_closed_loop_metrics(model_frames, expert_frames, cmd_frames, fps=3
     mae = lat_errors.mean()
     rmse = np.sqrt((lat_errors ** 2).mean())
     failure_rate = len(lat_errors[lat_errors > failure_rate_threshold]) / float(len(lat_errors)) * 100
-    distance = calculate_distance(model_frames)
-    interventions = calculate_interventions(model_frames)
+    distance = calculate_distance(model_frames) if distance == None else distance
+    interventions = calculate_interventions(model_frames) if interventions == None else interventions
 
     return {
         'mae': mae,
