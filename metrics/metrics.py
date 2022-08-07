@@ -2,6 +2,7 @@ import argparse
 import sys
 from pathlib import Path
 import logging
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -111,6 +112,42 @@ def calculate_trajectory_open_loop_metrics(predicted_waypoints, true_waypoints, 
         'last_wp_expert_whiteness': last_wp_expert_whiteness,
         #'frechet_distance': frechet_distances.mean()
     }
+
+
+def force_chronological_order(frames_df):
+    '''Reorders the frames in a dataframe in a chronological order.'''
+    frames = frames_df.copy()
+    frames['index'] = pd.to_datetime(frames['index'])
+    frames.sort_values(by='index', inplace=True)
+    frames.set_index(frames['index'], inplace=True)
+    return frames
+
+def calculate_whiteness_over_time(cmd_frames, window_size='2s'):
+
+    cmd_frames = force_chronological_order(cmd_frames)
+
+    whiteness_timestamps = []
+    whiteness_vals = []
+
+    for window in cmd_frames.rolling(window_size):
+        if len(window) < 2:
+            continue
+        current_timestamps = window['index'].to_numpy()[:-1]
+        next_timestamps = window['index'].to_numpy()[1:]
+        delta_times = (next_timestamps - current_timestamps).astype(np.float32) / 1_000_000_000 
+
+        current_angles = np.degrees(window['cmd_steering_angle'].to_numpy()[:-1]) * STEERING_ANGLE_RATIO
+        next_angles = np.degrees(window['cmd_steering_angle'].to_numpy()[1:]) * STEERING_ANGLE_RATIO
+        delta_angles = (next_angles - current_angles)
+        whiteness = np.sqrt(((delta_angles / delta_times) ** 2).mean())
+
+        whiteness_vals.append(whiteness)
+        whiteness_timestamps.append(current_timestamps[-1].item())
+
+    whiteness_timestamps = [datetime.utcfromtimestamp(t/1_000_000_000) for t in whiteness_timestamps]
+
+    return whiteness_timestamps, whiteness_vals
+
 
 
 def calculate_whiteness(steering_angles, fps=30, timestamps=None):

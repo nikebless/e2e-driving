@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+import os
 
 import cv2
 import numpy as np
@@ -145,7 +146,7 @@ class NvidiaDataset(Dataset):
 
     def __init__(self, dataset_paths, transform=None, camera="front_wide", name="Nvidia dataset",
                  filter_turns=False, output_modality="steering_angle", n_branches=1, n_waypoints=6,
-                 metadata_file="nvidia_frames.csv", color_space="rgb", dataset_proportion=1.0):
+                 metadata_file="nvidia_frames.csv", vehicle_cmd_file="vehicle_cmd.csv", color_space="rgb", dataset_proportion=1.0):
         self.name = name
         self.metadata_file = metadata_file
         self.color_space = color_space
@@ -171,6 +172,9 @@ class NvidiaDataset(Dataset):
         keep_n_frames = ceil(len(self.frames) * dataset_proportion)
         self.frames = self.frames.head(keep_n_frames)
 
+        self.vehicle_cmd_frames = None
+        self.vehicle_cmd_frames = pd.concat([pd.read_csv(dataset_path / vehicle_cmd_file) for dataset_path in self.dataset_paths])
+
         if filter_turns:
             print("Filtering turns with blinker signal")
             self.frames = self.frames[self.frames.turn_signal == 1]
@@ -195,7 +199,8 @@ class NvidiaDataset(Dataset):
             'position_y': np.array(frame["position_y"]),
             'yaw': np.array(frame["yaw"]),
             'turn_signal': np.array(frame["turn_signal"]),
-            'row_id': np.array(frame["row_id"])
+            'row_id': np.array(frame["row_id"]),
+            'timestamp': np.array(frame["index"]).astype('datetime64[ns]').astype(np.float64),
         }
 
         turn_signal = int(frame["turn_signal"])
@@ -372,7 +377,7 @@ class NvidiaDatasetGrouped(NvidiaDataset):
             'position_y': np.array(frames["position_y"]),
             'yaw': np.array(frames["yaw"]),
             'turn_signal': np.array(frames["turn_signal"]),
-            'row_id': np.array(frames["row_id"])
+            'row_id': np.array(frames["row_id"]),
         }
 
         target_values = np.array(frames["steering_angle"])
