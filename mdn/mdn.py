@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 from torch.distributions import Categorical
 import math
+import torch.nn.functional as F
 
 
 ONEOVERSQRT2PI = 1.0 / math.sqrt(2 * math.pi)
@@ -48,7 +49,7 @@ class MDN(nn.Module):
 
     def forward(self, minibatch):
         pi = self.pi(minibatch)
-        sigma = torch.exp(self.sigma(minibatch))
+        sigma = F.elu(self.sigma(minibatch)) + 1
         sigma = sigma.view(-1, self.num_gaussians, self.out_features)
         mu = self.mu(minibatch)
         mu = mu.view(-1, self.num_gaussians, self.out_features)
