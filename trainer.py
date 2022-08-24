@@ -20,13 +20,16 @@ import wandb
 import time
 import logging
 
-from metrics.metrics import calculate_open_loop_metrics, calculate_trajectory_open_loop_metrics
+from metrics.metrics import calculate_open_loop_metrics
 
 from ibc import optimizers
-from pilotnet import PilotNet, PilotnetEBM, PilotnetClassifier
+from mdn.mdn import sample as mdn_sample, mdn_loss
+from pilotnet import PilotNet, PilotnetEBM, PilotnetClassifier, PilotnetMDN
 from scripts.pt_to_onnx import convert_pt_to_onnx
 
 import train
+
+# general flow tip: write "nocommit", prepended with an exclamation mark, to mark code that should not be committed.
 
 
 def earth_mover_distance(input: Tensor, target: Tensor, square=False) -> Tensor:
@@ -576,6 +579,7 @@ class EBMTrainer(Trainer):
                 wandb.save(pure_model_path)
                 wandb.save(dfo_model_path)
 
+
 class ClassificationTrainer(Trainer):
 
     temporal_regularization_options = {
@@ -752,3 +756,97 @@ class ClassificationTrainer(Trainer):
         avg_entropy = epoch_entropy / len(iterator)
         result = np.array(all_predictions)
         return avg_mae, result, avg_temp_reg_loss, avg_entropy
+
+
+class MDNTrainer(Trainer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.train_conf = kwargs['train_conf']
+        self.model = PilotnetMDN(self.train_conf.mdn_n_components)
+        self.model.to(self.device)
+
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.train_conf.learning_rate, betas=(0.9, 0.999),
+                                           eps=1e-08, weight_decay=self.train_conf.weight_decay, amsgrad=False)
+
+        self.criterion = mdn_loss
+
+    def predict(self, _, dataloader):
+        all_predictions = []
+        model = self.model
+        model.eval()
+
+        with torch.no_grad():
+            progress_bar = tqdm(total=len(dataloader), smoothing=0)
+            progress_bar.set_description("Model predictions")
+            for i, (data, target_values, condition_mask) in enumerate(dataloader):
+                inputs = data['image'].to(self.device)
+                pi, sigma, mu = model(inputs)
+                predictions = mdn_sample(pi, sigma, mu)
+                all_predictions.extend(predictions.cpu().squeeze().numpy())
+                progress_bar.update(1)
+
+        return np.array(all_predictions)
+
+    def train_batch(self, _, input, target, __, ___):
+        inputs = input['image'].to(self.device)
+        target = target.to(self.device, torch.float32)
+
+        logging.debug(f'inputs: {inputs.shape} {inputs.dtype}')
+        logging.debug(f'target: {target.shape} {target.dtype}')
+
+        pi, sigma, mu = self.model(inputs)
+        loss = self.criterion(pi, sigma, mu, target)
+
+        self.optimizer.zero_grad(set_to_none=True)
+
+        return (pi, sigma, mu), loss
+
+    @torch.no_grad()
+    def evaluate(self, _, iterator, __, progress_bar, epoch, train_loss):
+        model = self.model
+        model.eval()
+        all_predictions = []
+
+        inference_times = []
+
+        epoch_mae = 0.0
+        epoch_temporal_reg_loss = 0.0
+        ask_batch_timestamp = time.time()
+        for i, (input, target, _) in enumerate(iterator):
+            recv_batch_timestap = time.time()
+            logging.debug(f'\nModel waited for batch: {(recv_batch_timestap - ask_batch_timestamp) * 1000:.2f} ms')
+
+            inputs = input['image'].to(self.device)
+            target = target.to(self.device, torch.float32)
+            logging.debug(f'target.shape: {target.shape}, target.dtype: {target.dtype}, min: {target.min()}, max: {target.max()}')
+
+            inference_start = time.time()
+            pi, sigma, mu = model(inputs)
+            preds = mdn_sample(pi, sigma, mu)
+            inference_end = time.time()
+
+            inference_time = inference_end - inference_start
+            inference_times.append(inference_time)
+
+            logging.debug(f'inference time: {inference_time} | avg : {np.mean(inference_times)} | max: {np.max(inference_times)} | min: {np.min(inference_times)}')
+
+            mae = F.l1_loss(preds, target.view(-1, 1))
+            epoch_mae += mae.item()
+
+            # TODO: think how to calculate uncertainty for MDNs
+            # entropy of pis (below) is probably not super helpful.
+            # Maybe entropy of the mixture of distributions?
+            #
+            # entropy = calculate_step_uncertainty(pi) 
+
+            all_predictions.extend(preds.cpu().squeeze().numpy())
+
+            progress_bar.update(1)
+            progress_bar.set_description(f'epoch {epoch + 1} | train loss: {train_loss:.4f} | valid loss: {(epoch_mae / (i + 1)):.4f} | valid temporal reg loss: {(epoch_temporal_reg_loss / (i + 1)):.4f}')
+
+            ask_batch_timestamp = time.time()
+
+        avg_mae = epoch_mae / len(iterator)
+        result = np.array(all_predictions)
+        return avg_mae, result

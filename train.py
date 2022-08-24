@@ -27,7 +27,7 @@ def parse_arguments():
     argparser.add_argument(
         '--model-type',
         required=True,
-        choices=['pilotnet', 'pilotnet-ebm', 'pilotnet-classifier'],
+        choices=['pilotnet', 'pilotnet-ebm', 'pilotnet-classifier', 'pilotnet-mdn'],
         help='Defines which model will be trained.'
     )
 
@@ -160,19 +160,20 @@ def parse_arguments():
     argparser.add_argument(
         '--stochastic-optimizer-iters',
         type=int,
-        default=3, 
+        default=0, 
         help='Number of DFO iterations used for test-time EBM inference.'
     )
 
     argparser.add_argument(
         '--steering-bound',
         type=float,
-        default=4.5,
+        default=8.0,
         help='Steering angle bound norm.'
     )
     
     argparser.add_argument(
         '--use-constant-samples',
+        default=True,
         action='store_true',
         help='Use a constant action grid instead of random sample each time as negatives for EBM training & inference.'
     )
@@ -187,8 +188,8 @@ def parse_arguments():
     argparser.add_argument(
         '--temporal-group-size',
         type=int,
-        default=1,
-        help='Temporal group size for EBM training. Group size = 2 is necessary for temporal regularization.'
+        default=2,
+        help='Sample items into a mini-batch in sequences of this size. Group size = 2 is necessary for temporal regularization.'
     )
 
     argparser.add_argument(
@@ -247,6 +248,14 @@ def parse_arguments():
     )
 
     argparser.add_argument(
+        '--mdn-n-components',
+        required=False,
+        type=int,
+        default=3,
+        help='Number of components for an MDN model.'
+    )
+
+    argparser.add_argument(
         '--debug',
         action='store_true',
         help='When true, debug mode is enabled.'
@@ -275,6 +284,7 @@ class TrainingConfig:
         self.loss = args.loss
         self.loss_variant = args.loss_variant
         self.max_epochs = args.max_epochs
+        self.mdn_n_components = args.mdn_n_components
         self.model_type = args.model_type
         self.num_workers = args.num_workers
         self.patience = args.patience
@@ -328,6 +338,8 @@ def train_model(model_name, train_conf):
         trainer = trainers.EBMTrainer(model_name=model_name, train_conf=train_conf)
     elif train_conf.model_type == "pilotnet-classifier":
         trainer = trainers.ClassificationTrainer(model_name=model_name, train_conf=train_conf)
+    elif train_conf.model_type == "pilotnet-mdn":
+        trainer = trainers.MDNTrainer(model_name=model_name, train_conf=train_conf)
     else:
         print(f"Unknown model type {train_conf.model_type}")
         sys.exit()
