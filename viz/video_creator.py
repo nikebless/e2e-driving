@@ -29,16 +29,15 @@ PRED_COLORS = [(255, 0, 0), (0, 0, 255), (255, 255, 0)]
 PRED_SIZES = [9, 7, 5]
 
 
-def create_driving_video(dataset_folder, output_modality):
+def create_driving_video(dataset_folder):
     dataset_path = Path(dataset_folder)
-    dataset = NvidiaDataset([dataset_path], output_modality=output_modality, n_branches=3,
-                            metadata_file="nvidia_frames.csv")
+    dataset = NvidiaDataset([dataset_path], metadata_file="nvidia_frames.csv")
 
     temp_frames_folder = dataset_path / 'temp'
     shutil.rmtree(temp_frames_folder, ignore_errors=True)
     temp_frames_folder.mkdir()
 
-    draw_driving_frames(dataset, temp_frames_folder, output_modality)
+    draw_driving_frames(dataset, temp_frames_folder)
     output_video_path = dataset_path / 'video.mp4'
     convert_frames_to_video(temp_frames_folder, output_video_path, fps=30)
 
@@ -47,11 +46,10 @@ def create_driving_video(dataset_folder, output_modality):
     print(f"{dataset.name}: output video {output_video_path} created.")
 
 
-def create_prediction_video(dataset_folder, output_modality, model_paths, model_types, model_names, config: train.TrainingConfig):
+def create_prediction_video(dataset_folder, model_paths, model_types, model_names, config: train.TrainingConfig):
     dataset_path = Path(dataset_folder)
     save_path = Path('./')
-    dataset = NvidiaDataset([Path('/data/Bolt/dataset/2021-10-14-13-08-51_e2e_rec_vahi_backwards/')], name=dataset_path.name, output_modality=output_modality,
-                            n_branches=config.n_branches, n_waypoints=10)
+    dataset = NvidiaDataset([Path('/data/Bolt/dataset/2021-10-14-13-08-51_e2e_rec_vahi_backwards/')], name=dataset_path.name)
 
     #dataset.frames = dataset.frames[9160:23070]
 
@@ -64,19 +62,12 @@ def create_prediction_video(dataset_folder, output_modality, model_paths, model_
 
     for model_path, model_type, model_name in zip(model_paths, model_types, model_names):
 
-        if output_modality == "steering_angle":
-            model_steering_predictions = get_steering_predictions(dataset_path, model_path, model_type, config)
-            print(f'model: {model_path}. Steering predictions:', model_steering_predictions.shape, type(model_steering_predictions))
-            speed_predictions = get_speed_predictions(dataset)
-            steering_predictions[model_name] = model_steering_predictions
+        model_steering_predictions = get_steering_predictions(dataset_path, model_path, model_type, config)
+        print(f'model: {model_path}. Steering predictions:', model_steering_predictions.shape, type(model_steering_predictions))
+        speed_predictions = get_speed_predictions(dataset)
+        steering_predictions[model_name] = model_steering_predictions
 
-        if output_modality == "waypoints":
-            # TODO: implement multiple models support
-            trajectory = get_trajectory_predictions(dataset_path, model_path, model_type)
-            draw_prediction_frames_wp(dataset, trajectory, temp_frames_folder)
-
-    if output_modality == "steering_angle":
-        draw_prediction_frames(dataset, steering_predictions, speed_predictions, temp_frames_folder)
+    draw_prediction_frames(dataset, steering_predictions, speed_predictions, temp_frames_folder)
 
     output_video_path = save_path / f"{str(Path(model_path).parent.name)}.mp4"
     convert_frames_to_video(temp_frames_folder, output_video_path, fps=30)
@@ -92,7 +83,7 @@ def get_steering_predictions(dataset_path, model_path, model_type, config):
     tr = transforms.Compose([Normalize()])
     # TODO: remove hardcoded path
     dataset = NvidiaDataset([Path(dataset_path)],
-                            tr, name=dataset_path.name, output_modality="steering_angle", n_branches=3 if model_type == "pilotnet-conditional" else 1,)
+                            tr, name=dataset_path.name)
     validloader_tr = torch.utils.data.DataLoader(dataset, batch_size=64, shuffle=False,
                                          num_workers=16, pin_memory=True, persistent_workers=True)
 
@@ -114,13 +105,7 @@ def get_steering_predictions(dataset_path, model_path, model_type, config):
         steering_predictions = np.array(steering_predictions).flatten()
     else:
         #trainer.force_cpu()  # not enough memory on GPU for parallel processing  # TODO: make input argument
-        if model_type == "pilotnet-conditional":
-            model = PilotNetConditional(n_branches=3, n_outputs=1)
-            trainer = trainers.ConditionalTrainer(None, train_conf=config)
-        elif model_type == "pilotnet-control":
-            model = PilotnetControl(n_outputs=1)
-            trainer = trainers.ControlTrainer(None, target_name="steering_angle", n_conditional_branches=3)
-        elif model_type == "pilotnet-ebm":
+        if model_type == "pilotnet-ebm":
             trainer = trainers.EBMTrainer(train_conf=config)
             model = trainer.model
         else:
@@ -135,35 +120,6 @@ def get_steering_predictions(dataset_path, model_path, model_type, config):
         steering_predictions = trainer.predict(model, validloader_tr)
 
     return steering_predictions
-
-def get_trajectory_predictions(dataset_path, model_paths, model_type):
-    print(f"{dataset_path.name}: trajectory predictions")
-    #trainer.force_cpu()  # not enough memory on GPU for parallel processing  # TODO: make input argument
-
-    n_outputs = 20
-    if model_type == "pilotnet-conditional":
-        model = PilotNetConditional(n_branches=3, n_outputs=n_outputs)
-        trainer = trainers.ConditionalTrainer(None, target_name="waypoints", n_conditional_branches=3)
-    elif model_type == "pilotnet-control":
-        model = PilotnetControl(n_outputs=n_outputs)
-        trainer = trainers.ControlTrainer(None, target_name="waypoints", n_conditional_branches=3)
-    else:
-        print(f"Unknown model type '{args.model_type}'")
-        sys.exit()
-
-    model.load_state_dict(torch.load(model_path))
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model.to(device)
-    model.eval()
-
-    tr = transforms.Compose([Normalize()])
-    # TODO: remove hardcoded path
-    dataset = NvidiaDataset([Path("/home/romet/data2/datasets/rally-estonia/dataset-new-small/summer2021/2021-10-26-10-49-06_e2e_rec_ss20_elva")], tr,
-                            name=dataset_path.name, output_modality="waypoints", n_waypoints=10, n_branches=1)
-    validloader_tr = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False,
-                                         num_workers=1, pin_memory=True, persistent_workers=True)
-    waypoints = trainer.predict(model, validloader_tr)
-    return waypoints
 
 
 def get_speed_predictions(dataset):
@@ -312,8 +268,8 @@ def draw_prediction_frames(dataset, predicted_angles, predicted_speed, temp_fram
         io.imsave(f"{temp_frames_folder}/{frame_index + 1:05}.jpg", frame)
 
 
-def draw_driving_frames(dataset, temp_frames_folder, output_modality):
-    print(f"Drawing driving frames with {output_modality}")
+def draw_driving_frames(dataset, temp_frames_folder):
+    print(f"Drawing driving frames ")
     t = tqdm(enumerate(dataset), total=len(dataset))
     t.set_description(dataset.name)
     for frame_index, (data, target_values, condition_mask) in t:
@@ -338,16 +294,12 @@ def draw_driving_frames(dataset, temp_frames_folder, output_modality):
         cv2.putText(frame, 'Speed:   {:.2f} km/h'.format(true_speed), (10, 1200), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2,
                     cv2.LINE_AA)
 
-        if output_modality == "steering_angle":
-            radius = 200
-            steering_pos = (960, 1200)
-            cv2.circle(frame, steering_pos, radius, (255, 255, 255), 7)
+        radius = 200
+        steering_pos = (960, 1200)
+        cv2.circle(frame, steering_pos, radius, (255, 255, 255), 7)
 
-            draw_steering_angle(frame, true_angle, radius, steering_pos, 13, color)
-            cv2.rectangle(frame, (935, 1200), (980, 1200 - int(3 * true_speed)), color, cv2.FILLED)
-
-        if output_modality == "waypoints":
-            draw_trajectory(frame, data["waypoints"], color)
+        draw_steering_angle(frame, true_angle, radius, steering_pos, 13, color)
+        cv2.rectangle(frame, (935, 1200), (980, 1200 - int(3 * true_speed)), color, cv2.FILLED)
 
         frame = cv2.normalize(frame, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
         io.imsave(f"{temp_frames_folder}/{frame_index + 1:05}.jpg", frame)
@@ -482,7 +434,6 @@ if __name__ == "__main__":
     args.batch_sampler = None
     args.wandb_project = ''
     args.loss = 'ebm'
-    args.loss_discount_rate = 0
     args.stochastic_optimizer_train_samples = 0
     args.pretrained_model = False
 
@@ -490,6 +441,6 @@ if __name__ == "__main__":
     print("Creating video from: ", dataset_folder)
 
     if video_type == 'driving':
-        create_driving_video(dataset_folder, args.output_modality)
+        create_driving_video(dataset_folder)
     elif video_type == 'prediction':
-        create_prediction_video(dataset_folder, args.output_modality, model_paths=args.model_path, model_types=args.model_type, model_names=args.model_name, config=conf)
+        create_prediction_video(dataset_folder, model_paths=args.model_path, model_types=args.model_type, model_names=args.model_name, config=conf)

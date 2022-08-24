@@ -87,7 +87,7 @@ if __name__ == "__main__":
     argparser.add_argument(
         '--dataset-path',
         required=False,
-        default="/home/romet/data2/datasets/rally-estonia/dataset-new-small/summer2021",
+        default="/home/romet/data2/datasets/rally-estonia/dataset-cropped",
         help='Dataset used to create velocity model.'
     )
 

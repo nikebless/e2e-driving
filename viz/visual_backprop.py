@@ -237,7 +237,7 @@ def draw_trajectory(frame, waypoints, color):
         cv2.circle(frame, wp, 2, color, 2)
 
 
-def getImageWithOverlay(model, frame, output_modality, model_type):
+def getImageWithOverlay(model, frame, model_type):
     image = frame["image"].to(device)
     img = image.cpu().permute(1, 2, 0).detach().numpy()
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -263,79 +263,9 @@ def getImageWithOverlay(model, frame, output_modality, model_type):
     # resize image
     resized = cv2.resize(result, dim, interpolation=cv2.INTER_AREA)
 
-    if output_modality == "steering_angle":
-        draw_steering_angle_overlay(control, frame, image, model, model_type, resized)
-    elif output_modality == "waypoints":
-        draw_waypoints_overlay(control, frame, image, model, model_type, resized)
-    else:
-        print(f"Unknown output modality: {output_modality}")
-        sys.exit()
+    draw_steering_angle_overlay(control, frame, image, model, model_type, resized)
 
     return resized
-
-
-def draw_waypoints_overlay(control, frame, image, model, model_type, resized):
-    turn_signal = int(frame["turn_signal"])
-    true_waypoints = frame["waypoints"]
-    steering_angle = math.degrees(frame["steering_angle"])
-    vehicle_speed = frame["vehicle_speed"]
-    frame_id = frame["row_id"]
-    draw_trajectory(resized, true_waypoints, GREEN)
-    # cv2.putText(resized, 'True: {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}'.format(
-    #     true_waypoints[3], true_waypoints[7], true_waypoints[11], true_waypoints[15], true_waypoints[19]), (10, 30),
-    #             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
-    cv2.putText(resized, 'True: {:.4f} deg, {:.2f} km/h'.format(steering_angle, 3.6 * vehicle_speed), (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, GREEN, 2, cv2.LINE_AA)
-    # turn signal
-    turn_signal_map = {
-        1: "straight",
-        2: "left",
-        0: "right"
-    }
-    cv2.putText(resized, 'turn signal: {}'.format(turn_signal_map.get(turn_signal, "unknown")), (10, 110),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, GREEN, 2, cv2.LINE_AA)
-    cv2.putText(resized, 'frame: {}'.format(frame_id), (10, 150),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, GREEN, 2, cv2.LINE_AA)
-    if model_type == "pilotnet-conditional":
-        n_branches = 3
-        pred_waypoints = model(image.unsqueeze(0)).squeeze(1).cpu().detach().numpy()[0].reshape(n_branches, 20)
-        conditional_selector = turn_signal if n_branches > 1 else 0
-        predicted_trajectory = pred_waypoints[conditional_selector]
-    else:
-        predicted_trajectory = model(image.unsqueeze(0), control).cpu().detach().numpy()[0]
-    frechet_distance = frdist(predicted_trajectory.reshape(-1, 2), true_waypoints.reshape(-1, 2))
-    frechet_color = RED if frechet_distance > 5.0 else GREEN
-    cv2.putText(resized, 'Frechet distance: {:.4f}'.format(frechet_distance), (10, 190),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, frechet_color, 2, cv2.LINE_AA)
-    first_wp_error = math.hypot(predicted_trajectory[0] - true_waypoints[0],
-                                predicted_trajectory[1] - true_waypoints[1])
-    first_wp_color = RED if first_wp_error > 0.25 else GREEN
-    cv2.putText(resized, '1st distance: {:.4f}'.format(first_wp_error), (10, 230),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, first_wp_color, 2, cv2.LINE_AA)
-    draw_trajectory(resized, predicted_trajectory, RED)
-
-    steering_angle_wp = [0.0, 0.0]
-    steering_angle_wp.extend(predicted_trajectory[:10])
-    #steering_angle_wp.extend(true_waypoints[:10])
-    pred_steering_angle = math.degrees(calculate_steering_angle(steering_angle_wp, ref_distance=6.857))
-    #pred_steering_angle = math.degrees(np.arctan(true_waypoints[3] / true_waypoints[2])) * 14.7
-    cv2.putText(resized, 'Pred: {:.4f} deg'.format(pred_steering_angle), (10, 70),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, RED, 2, cv2.LINE_AA)
-
-    draw_steering_wheel(resized, pred_steering_angle, steering_angle)
-
-    # cv2.putText(resized, 'Pred: {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}'.format(
-    #     selected_trajectory[3], selected_trajectory[7], selected_trajectory[11], selected_trajectory[15], selected_trajectory[19]), (10, 70),
-    #             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2,
-    #             cv2.LINE_AA)
-    # right_waypoints = pred_waypoints[0]
-    # draw_trajectory(resized, right_waypoints, (255, 0, 0))
-    #
-    # straight_waypoints = pred_waypoints[1]
-    # draw_trajectory(resized, straight_waypoints, (0, 0, 255))
-    #
-    # left_waypoints = pred_waypoints[2]
-    # draw_trajectory(resized, left_waypoints, (255, 255, 0))
 
 
 def draw_steering_angle_overlay(control, frame, image, model, model_type, resized):
@@ -383,16 +313,16 @@ def draw_steering_wheel(frame, pred_steering_angle, true_steering_angle):
     draw_steering_angle(frame, pred_steering_angle, radius, steering_pos, 9, (0, 0, 255))
 
 
-def draw_driving_frames(dataset, output_modality, model_type, model_name):
+def draw_driving_frames(dataset, model_type, model_name):
     temp_frames_folder = Path('temp_video')
     shutil.rmtree(temp_frames_folder, ignore_errors=True)
     temp_frames_folder.mkdir()
 
-    print(f"Drawing driving frames with {output_modality}")
+    print(f"Drawing driving frames ")
     t = tqdm(enumerate(dataset), total=len(dataset))
     t.set_description(dataset.name)
     for frame_index, (data, target_values, condition_mask) in t:
-        img = getImageWithOverlay(model, data, output_modality, model_type)
+        img = getImageWithOverlay(model, data, model_type)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         io.imsave(f"{temp_frames_folder}/{frame_index + 1:05}.jpg", img)
 
@@ -408,24 +338,13 @@ def draw_driving_frames(dataset, output_modality, model_type, model_name):
 if __name__ == "__main__":
     args = parse_arguments()
 
-    root_path = Path("/home/romet/data2/datasets/rally-estonia/dataset-new-small/summer2021")
+    root_path = Path("/home/romet/data2/datasets/rally-estonia/dataset-cropped")
     data_paths = [root_path / args.dataset_name]
-    if args.input_modality == "nvidia-camera":
-        dataset = NvidiaDataset(data_paths, output_modality=args.output_modality, n_waypoints=10,
-                                metadata_file="nvidia_frames_ext.csv")
-    elif args.input_modality == "ouster-lidar":
-        dataset = OusterDataset(data_paths)
-    else:
-        print(f"Uknown input modality '{args.input_modality}'")
-        sys.exit()
+    dataset = NvidiaDataset(data_paths, metadata_file="nvidia_frames_ext.csv")
 
-    n_outputs = 20 if args.output_modality == "waypoints" else 1
+    n_outputs = 1
     if args.model_type == "pilotnet":
         model = PilotNet()
-    elif args.model_type == "pilotnet-conditional":
-        model = PilotNetConditional(n_branches=3, n_outputs=n_outputs)
-    elif args.model_type == "pilotnet-control":
-        model = PilotnetControl(n_outputs=n_outputs)
     else:
         print(f"Unknown model type '{args.model_type}'")
         sys.exit()
@@ -436,11 +355,11 @@ if __name__ == "__main__":
     model.eval()
     
     if args.video:
-        draw_driving_frames(dataset, args.output_modality, args.model_type, args.model_name)
+        draw_driving_frames(dataset, args.model_type, args.model_name)
     else:
         deq = deque(range(0, len(dataset)))
         deq.rotate(-args.starting_frame)
-        vis = getImageWithOverlay(model, dataset[deq[0]][0], args.output_modality, args.model_type)
+        vis = getImageWithOverlay(model, dataset[deq[0]][0], args.model_type)
 
         cv2.namedWindow('vis', cv2.WINDOW_AUTOSIZE)
         window_scale = 5
@@ -451,8 +370,8 @@ if __name__ == "__main__":
             k = cv2.waitKey(10)
             if k == ord('j'):
                 deq.rotate(1)
-                vis = getImageWithOverlay(model, dataset[deq[0]][0], args.output_modality, args.model_type)
+                vis = getImageWithOverlay(model, dataset[deq[0]][0], args.model_type)
             elif k == ord('k'):
                 deq.rotate(-1)
-                vis = getImageWithOverlay(model, dataset[deq[0]][0], args.output_modality, args.model_type)
+                vis = getImageWithOverlay(model, dataset[deq[0]][0], args.model_type)
 

@@ -142,11 +142,9 @@ class Normalize(object):
 
 
 class NvidiaDataset(Dataset):
-    #CAP_WAYPOINTS = 30
 
     def __init__(self, dataset_paths, transform=None, camera="front_wide", name="Nvidia dataset",
-                 filter_turns=False, output_modality="steering_angle", n_branches=1, n_waypoints=6,
-                 metadata_file="nvidia_frames.csv", vehicle_cmd_file="vehicle_cmd.csv", color_space="rgb", dataset_proportion=1.0):
+                 filter_turns=False, metadata_file="nvidia_frames.csv", vehicle_cmd_file="vehicle_cmd.csv", color_space="rgb", dataset_proportion=1.0):
         self.name = name
         self.metadata_file = metadata_file
         self.color_space = color_space
@@ -156,16 +154,7 @@ class NvidiaDataset(Dataset):
         else:
             self.transform = transforms.Compose([Normalize()])
         self.camera_name = camera
-        self.output_modality = output_modality
-        self.n_waypoints = n_waypoints
-
-        if self.output_modality == "steering_angle":
-            self.target_size = 1
-        else:
-            print(f"Unknown output modality {self.output_modality}")
-            sys.exit()
-
-        self.n_branches = n_branches
+        self.target_size = 1
 
         datasets = [self.read_dataset(dataset_path, camera) for dataset_path in self.dataset_paths]
         self.frames = pd.concat(datasets)
@@ -173,7 +162,8 @@ class NvidiaDataset(Dataset):
         self.frames = self.frames.head(keep_n_frames)
 
         self.vehicle_cmd_frames = None
-        self.vehicle_cmd_frames = pd.concat([pd.read_csv(dataset_path / vehicle_cmd_file) for dataset_path in self.dataset_paths])
+        self.vehicle_cmd_frames = [pd.read_csv(dataset_path / vehicle_cmd_file) for dataset_path in self.dataset_paths if vehicle_cmd_file in dataset_path.glob("*.csv")]
+        self.vehicle_cmd_frames = pd.concat(self.vehicle_cmd_frames) if len(self.vehicle_cmd_frames) else None
 
         if filter_turns:
             print("Filtering turns with blinker signal")
@@ -203,43 +193,19 @@ class NvidiaDataset(Dataset):
             'timestamp': np.array(frame["index"]).astype('datetime64[ns]').astype(np.float64),
         }
 
-        turn_signal = int(frame["turn_signal"])
-
-        if self.output_modality == "waypoints":
-            waypoints = []
-            for i in np.arange(1, self.n_waypoints + 1):
-                waypoints.append(frame[f"wp{i}_{self.camera_name}_x"])
-                waypoints.append(frame[f"wp{i}_{self.camera_name}_y"])
-
-            data['waypoints'] = np.array(waypoints)
-            target_values = waypoints
-        else:
-            target_values = frame["steering_angle"]
+        target_values = frame["steering_angle"]
 
         if self.transform:
             data = self.transform(data)
 
-        if self.n_branches > 1:
-            target = np.zeros((self.n_branches, self.target_size))
-            target[turn_signal, :] = target_values
-
-            conditional_mask = np.zeros((self.n_branches, self.target_size))
-            conditional_mask[turn_signal, :] = 1
-        else:
-            target = np.zeros((self.n_branches, self.target_size))
-            target[0, :] = target_values
-            conditional_mask = np.ones((self.n_branches, self.target_size))
+        target = np.zeros((1, self.target_size))
+        target[0, :] = target_values
+        conditional_mask = np.ones((1, self.target_size))
 
         return data, target.reshape(-1), conditional_mask.reshape(-1)
 
     def __len__(self):
         return len(self.frames.index)
-
-    def get_waypoints(self):
-        wp_x_cols = [f"wp{i}_{self.camera_name}_x" for i in np.arange(1, self.n_waypoints + 1)]
-        wp_y_cols = [f"wp{i}_{self.camera_name}_y" for i in np.arange(1, self.n_waypoints + 1)]
-        waypoint_cols = np.column_stack((wp_x_cols, wp_y_cols)).reshape(-1)
-        return self.frames[waypoint_cols].to_numpy()
 
     def read_dataset(self, dataset_path, camera):
         if type(dataset_path) is dict:
@@ -268,58 +234,10 @@ class NvidiaDataset(Dataset):
         # Removed frames marked as skipped
         frames_df = frames_df[frames_df["turn_signal"] != -1]  # TODO: remove magic values.
 
-        if self.output_modality == "waypoints":
-            frames_df = frames_df[frames_df[f"position_x"].notna()]
-            frames_df = frames_df[frames_df[f"position_y"].notna()]
-
-            for i in np.arange(1, self.n_waypoints + 1):
-                frames_df = frames_df[frames_df[f"wp{i}_{camera}_x"].notna()]
-                frames_df = frames_df[frames_df[f"wp{i}_{camera}_y"].notna()]
-
-            frames_df["yaw_delta"] = np.abs(frames_df["yaw"]) - np.abs(frames_df["yaw"]).shift(-1)
-            frames_df = frames_df[np.abs(frames_df["yaw_delta"]) < 0.1]
-
-
-        # if self.calculate_waypoints:
-        #
-        #     vehicle_x = frames_df["position_x"]
-        #     vehicle_y = frames_df["position_y"]
-        #
-        #     for i in np.arange(1, self.N_WAYPOINTS + 1):
-        #         wp_global_x = frames_df["position_x"].shift(-i * self.CAP_WAYPOINTS)
-        #         wp_global_y = frames_df["position_y"].shift(-i * self.CAP_WAYPOINTS)
-        #         frames_df[f"x_{i}"] = wp_global_x
-        #         frames_df[f"y_{i}"] = wp_global_y
-        #         yaw = frames_df["yaw"]
-        #         #frames_df["yaw"] = yaw
-        #
-        #         wp_local_x = (wp_global_x - vehicle_x) * np.cos(yaw) + (wp_global_y - vehicle_y) * np.sin(yaw)
-        #         wp_local_y = -(wp_global_x - vehicle_x) * np.sin(yaw) + (wp_global_y - vehicle_y) * np.cos(yaw)
-        #         frames_df[f"x_{i}_offset"] = wp_local_x
-        #         frames_df[f"y_{i}_offset"] = wp_local_y
-        #
-        #         # Remove rows without trajectory offsets, should be last N_WAYPOINTS rows
-        #         frames_df = frames_df[frames_df[f"x_{i}_offset"].notna()]
-        #
-        #     # frames_df["yaw_delta"] = np.abs(frames_df["yaw"]) - np.abs(frames_df["yaw"]).shift(-1)
-        #     # frames_df = frames_df[np.abs(frames_df["yaw_delta"]) < 0.1]
-        #     #
-        #     # frames_df["x_1_delta"] = frames_df["x_1_offset"] - frames_df["x_1_offset"].shift(-1)
-        #     # frames_df = frames_df[np.abs(frames_df["x_1_delta"]) < 0.1]
-        #     #
-        #     # frames_df["y_1_delta"] = frames_df["y_1_offset"] - frames_df["y_1_offset"].shift(-1)
-        #     # frames_df = frames_df[np.abs(frames_df["y_1_delta"]) < 0.1]
-        #
-        #     # frames_df = frames_df[np.abs(frames_df["steering_angle"]) < 2.0]
-
         len_after_filtering = len(frames_df)
 
         camera_images = frames_df[f"{camera}_filename"].to_numpy()
         frames_df["image_path"] = [str(dataset_path / image_path) for image_path in camera_images]
-        if self.output_modality == "waypoints":
-            for i in np.arange(1, self.n_waypoints + 1):
-                frames_df[f"wp{i}_all_x"] = frames_df[f"wp{i}_{camera}_x"]
-                frames_df[f"wp{i}_all_y"] = frames_df[f"wp{i}_{camera}_y"]
 
         print(f"{dataset_path}: length={len(frames_df)}, filtered={len_before_filtering-len_after_filtering}")
         frames_df.reset_index(inplace=True)
@@ -390,8 +308,7 @@ class NvidiaDatasetGrouped(NvidiaDataset):
         return data, target_values.reshape(-1, 1), dummy
 
 class NvidiaTrainDataset(NvidiaDatasetGrouped):
-    def __init__(self, root_path, output_modality="steering_angle", n_branches=3, n_waypoints=6,
-                 camera="front_wide", **kwargs):
+    def __init__(self, root_path, camera="front_wide", **kwargs):
         train_paths = [
             root_path / "2021-05-20-12-36-10_e2e_sulaoja_20_30",
             root_path / "2021-05-20-12-43-17_e2e_sulaoja_20_30",
@@ -444,13 +361,12 @@ class NvidiaTrainDataset(NvidiaDatasetGrouped):
             ]
 
         tr = transforms.Compose([Normalize()])
-        super().__init__(train_paths, tr, camera=camera,  output_modality=output_modality, n_branches=n_branches,
-                         n_waypoints=n_waypoints, **kwargs)
+        super().__init__(train_paths, tr, camera=camera, **kwargs)
 
 
 class NvidiaValidationDataset(NvidiaDatasetGrouped):
     # todo: remove default parameters
-    def __init__(self, root_path, output_modality="steering_angle", n_branches=3, n_waypoints=6, camera="front_wide", **kwargs):
+    def __init__(self, root_path, camera="front_wide", **kwargs):
         valid_paths = [
             root_path / "2021-05-28-15-19-48_e2e_sulaoja_20_30",
             root_path / "2021-06-07-14-20-07_e2e_rec_ss6",
@@ -466,5 +382,4 @@ class NvidiaValidationDataset(NvidiaDatasetGrouped):
         ]
 
         tr = transforms.Compose([Normalize()])
-        super().__init__(valid_paths, tr, camera=camera, output_modality=output_modality, n_branches=n_branches,
-                         n_waypoints=n_waypoints, **kwargs)
+        super().__init__(valid_paths, tr, camera=camera, **kwargs)

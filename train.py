@@ -32,21 +32,6 @@ def parse_arguments():
     )
 
     argparser.add_argument(
-        '--input-modality',
-        required=False,
-        default='nvidia-camera',
-        choices=['nvidia-camera'],
-    )
-
-    argparser.add_argument(
-        '--lidar-channel',
-        required=False,
-        choices=['ambience', 'intensity', 'range'],
-        help="Lidar channels to use for training. Combined image is used if not provided. "
-             "Only applies to 'ouster-lidar' modality."
-    )
-
-    argparser.add_argument(
         '--camera-name',
         required=False,
         default="front_wide",
@@ -55,23 +40,8 @@ def parse_arguments():
     )
 
     argparser.add_argument(
-        '--output-modality',
-        required=False,
-        default="steering_angle",
-        choices=["steering_angle", "waypoints"],
-        help="Choice of output modalities to train model with."
-    )
-
-    argparser.add_argument(
-        '--num-waypoints',
-        type=int,
-        default=10,
-        help="Number of waypoints used for trajectory."
-    )
-
-    argparser.add_argument(
         '--dataset-folder',
-        default="/home/romet/data2/datasets/rally-estonia/dataset-new-small/summer2021",
+        default="/home/romet/data2/datasets/rally-estonia/dataset-cropped",
         help='Root path to the dataset.'
     )
 
@@ -168,15 +138,6 @@ def parse_arguments():
     )
 
     argparser.add_argument(
-        "--loss-discount-rate",
-        required=False,
-        type=float,
-        default=0.8,
-        help="Used to discount waypoints in trajectory as nearer waypoints are more important. "
-             "Only used with weighted loss."
-    )
-
-    argparser.add_argument(
         '--pretrained-model',
         required=False,
         help='Pretrained model used to initialize weights.'
@@ -270,6 +231,22 @@ def parse_arguments():
     )
 
     argparser.add_argument(
+        '--ebm-loss-type',
+        required=False,
+        choices=['ce', 'ce-proximity-aware'],
+        default='ce',
+        help='Type of EBM loss used for EBM training.'
+    )
+
+    argparser.add_argument(
+        '--ce-proximity-aware-temperature',
+        required=False,
+        type=float,
+        default=0.05, # pretty low, we want sharp peaks
+        help='Temperature for gaussian distribution around truth as CE target for EBM training.'
+    )
+
+    argparser.add_argument(
         '--debug',
         action='store_true',
         help='When true, debug mode is enabled.'
@@ -294,16 +271,11 @@ class TrainingConfig:
         self.dataset_folder = args.dataset_folder
         self.dataset_proportion = args.dataset_proportion
         self.debug = args.debug
-        self.input_modality = args.input_modality
         self.learning_rate = args.learning_rate
-        self.lidar_channel = args.lidar_channel
         self.loss = args.loss
-        self.loss_discount_rate = args.loss_discount_rate
         self.max_epochs = args.max_epochs
         self.model_type = args.model_type
-        self.n_waypoints = args.num_waypoints
         self.num_workers = args.num_workers
-        self.output_modality = args.output_modality
         self.patience = args.patience
         self.steering_bound = args.steering_bound
         self.stochastic_optimizer_inference_samples = args.stochastic_optimizer_inference_samples
@@ -319,6 +291,8 @@ class TrainingConfig:
         self.use_constant_samples = args.use_constant_samples
         self.wandb_project = args.wandb_project
         self.weight_decay = args.weight_decay
+        self.ebm_loss_type = args.ebm_loss_type
+        self.ce_proximity_aware_temperature = args.ce_proximity_aware_temperature
 
         log_format = "%(message)s"
         if self.debug:
@@ -326,17 +300,10 @@ class TrainingConfig:
         else:
             logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=log_format)
 
-        self.n_input_channels = 1 if self.lidar_channel else 3
-        if self.output_modality == "waypoints":
-            self.n_outputs = 2 * self.n_waypoints
-        elif self.output_modality == "steering_angle":
-            self.n_outputs = 1
-        else:
-            print(f"Uknown output modality {self.output_modality}")
-            sys.exit()
+        self.n_input_channels = 3
+        self.n_outputs = 1
 
-        self.n_branches = 1
-        self.fps = 10 if self.input_modality == "ouster-lidar" else 30
+        self.fps = 30
         self.pretrained_model = args.pretrained_model
 
 
@@ -352,7 +319,8 @@ def train_model(model_name, train_conf):
     print('train_conf: ', train_conf.__dict__)
 
     train_loader, valid_loader = load_data(train_conf)
-    wandb.config.update({"train_frames": len(train_loader.dataset.frames)})
+    if train_conf.wandb_project:
+        wandb.config.update({"train_frames": len(train_loader.dataset.frames)})
 
     if train_conf.model_type == 'pilotnet':
         trainer = trainers.PilotNetTrainer(model_name=model_name, train_conf=train_conf)
@@ -367,22 +335,14 @@ def train_model(model_name, train_conf):
 
 
 def load_data(train_conf):
-    print(f"Reading {train_conf.input_modality} data from {train_conf.dataset_folder}, "
-          f"camera name={train_conf.camera_name}, lidar_channel={train_conf.lidar_channel}, "
-          f"output_modality={train_conf.output_modality}")
+    print(f"Reading data from {train_conf.dataset_folder}, "
+          f"camera name={train_conf.camera_name}")
 
     group_size = train_conf.temporal_group_size
 
     dataset_path = Path(train_conf.dataset_folder)
-    if train_conf.input_modality == "nvidia-camera":
-        trainset = NvidiaTrainDataset(dataset_path, train_conf.output_modality,
-                                      train_conf.n_branches, n_waypoints=train_conf.n_waypoints,
-                                      camera=train_conf.camera_name, group_size=group_size, dataset_proportion=train_conf.dataset_proportion)
-        validset = NvidiaValidationDataset(dataset_path, train_conf.output_modality, train_conf.n_branches,
-                                           n_waypoints=train_conf.n_waypoints, group_size=group_size)
-    else:
-        print(f"Uknown input modality {train_conf.input_modality}")
-        sys.exit()
+    trainset = NvidiaTrainDataset(dataset_path, camera=train_conf.camera_name, group_size=group_size, dataset_proportion=train_conf.dataset_proportion)
+    validset = NvidiaValidationDataset(dataset_path, group_size=group_size)
 
     print(f"Training data has {len(trainset.frames)} frames")
     print(f"Validation data has {len(validset.frames)} frames")

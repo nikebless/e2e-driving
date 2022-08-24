@@ -63,11 +63,10 @@ def convert_pt_to_onnx(model_path, batch_size, output_path, with_choice, n_sampl
     return str(output_path)
 
 
-def get_loader(batch_size=1, dataset_path='/data/Bolt/dataset-new-small/summer2021', output_modality='steering_angle'):
-    n_branches = 1
+def get_loader(batch_size=1, dataset_path='/data/Bolt/dataset-cropped'):
     num_workers = 2
 
-    validset = NvidiaValidationDataset(Path(dataset_path), output_modality, n_branches, n_waypoints=1, group_size=1)
+    validset = NvidiaValidationDataset(Path(dataset_path), group_size=1)
     valid_loader = torch.utils.data.DataLoader(validset, batch_size=batch_size, shuffle=False,
                                             num_workers=num_workers, pin_memory=True,
                                             persistent_workers=False)

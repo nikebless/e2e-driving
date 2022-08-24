@@ -25,7 +25,7 @@ srun python -u train.py \
     --model-name steering-angle \
     --model-type pilotnet-ebm \
     --loss ebm \
-    --dataset-folder /gpfs/space/projects/Bolt/dataset-new-small/summer2021 \
+    --dataset-folder /gpfs/space/projects/Bolt/dataset-cropped \
     --batch-size 512 \
     --num-workers 16 \
     --wandb-project ibc \

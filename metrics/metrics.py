@@ -264,13 +264,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.input_modality == "nvidia-camera":
-        frames_filename = "nvidia_frames.csv"
-        cmd_frames_filename = "vehicle_cmd.csv"
-        fps = 30
-    else:
-        print("Uknown input modality")
-        sys.exit()
+    frames_filename = "nvidia_frames.csv"
+    cmd_frames_filename = "vehicle_cmd.csv"
+    fps = 30
 
     export_root_path = Path(args.expert_root_path)
     expert_ds = [export_root_path / dataset_path for dataset_path in args.expert_datasets]

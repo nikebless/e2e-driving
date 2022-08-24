@@ -79,28 +79,17 @@ def calculate_step_uncertainty(energy: Tensor) -> Tensor:
 
 class Trainer:
 
-    def __init__(self, model_name=None, train_conf: train.TrainingConfig = None):  # todo:rename target_name->output_modality
+    def __init__(self, model_name=None, train_conf: train.TrainingConfig = None):
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.target_name = train_conf.output_modality
-        self.n_conditional_branches = train_conf.n_branches
         self.wandb_logging = False
 
         if train_conf.loss: # loss is not None, hence we're in training mode
-            weights = torch.FloatTensor([(train_conf.loss_discount_rate ** i, train_conf.loss_discount_rate ** i)
-                                        for i in range(train_conf.n_waypoints)]).to(self.device)
-            weights = weights.flatten()
-            if train_conf.n_branches > 1:  # todo: this is conditional learning specific and should be handled there
-                weights = torch.cat(tuple(weights for i in range(train_conf.n_branches)), 0)
 
             if train_conf.loss == "mse":
                 self.criterion = MSELoss()
             elif train_conf.loss == "mae":
                 self.criterion = L1Loss()
-            elif train_conf.loss == "mse-weighted":
-                self.criterion = WeighedMSELoss(weights)
-            elif train_conf.loss == "mae-weighted":
-                self.criterion = WeighedL1Loss(weights)
             elif train_conf.loss == "ebm":
                 # MAE will be used in evaluation
                 self.criterion = CrossEntropyLoss()
@@ -172,34 +161,19 @@ class Trainer:
             metrics['valid_temporal_reg_loss'] = valid_temp_reg_loss
             metrics['valid_uncertainty'] = valid_uncertainty
             # todo: this if elif is getting bad, abstract to separate classes
-            if self.target_name == "steering_angle":
-                whiteness = metrics['whiteness']
-                mae = metrics['mae']
-                left_mae = metrics['left_mae']
-                straight_mae = metrics['straight_mae']
-                right_mae = metrics['right_mae']
-                progress_bar.set_description(f'{best_loss_marker}epoch {epoch + 1}'
-                                             f' | train loss: {train_loss:.4f}'
-                                             f' | valid loss: {valid_loss:.4f}'
-                                             f' | whiteness: {whiteness:.4f}'
-                                             f' | mae: {mae:.4f}'
-                                             f' | l_mae: {left_mae:.4f}'
-                                             f' | s_mae: {straight_mae:.4f}'
-                                             f' | r_mae: {right_mae:.4f}')
-            elif self.target_name == "waypoints":
-                first_wp_mae = metrics['first_wp_mae']
-                first_wp_whiteness = metrics['first_wp_whiteness']
-                last_wp_mae = metrics['last_wp_mae']
-                last_wp_whiteness = metrics['last_wp_whiteness']
-                # frechet_distance = metrics['frechet_distance']
-                progress_bar.set_description(f'{best_loss_marker}epoch {epoch + 1}'
-                                             f' | train loss: {train_loss:.4f}'
-                                             f' | valid loss: {valid_loss:.4f}'
-                                             f' | 1_mae: {first_wp_mae:.4f}'
-                                             f' | 1_whiteness: {first_wp_whiteness:.4f}'
-                                             f' | last_mae: {last_wp_mae:.4f}'
-                                             f' | last_whiteness: {last_wp_whiteness:.4f}')
-                # f' | frechet: {frechet_distance:.4f}')
+            whiteness = metrics['whiteness']
+            mae = metrics['mae']
+            left_mae = metrics['left_mae']
+            straight_mae = metrics['straight_mae']
+            right_mae = metrics['right_mae']
+            progress_bar.set_description(f'{best_loss_marker}epoch {epoch + 1}'
+                                            f' | train loss: {train_loss:.4f}'
+                                            f' | valid loss: {valid_loss:.4f}'
+                                            f' | whiteness: {whiteness:.4f}'
+                                            f' | mae: {mae:.4f}'
+                                            f' | l_mae: {left_mae:.4f}'
+                                            f' | s_mae: {straight_mae:.4f}'
+                                            f' | r_mae: {right_mae:.4f}')
 
             if self.wandb_logging:
                 metrics['epoch'] = epoch + 1
@@ -217,28 +191,21 @@ class Trainer:
 
     def calculate_metrics(self, fps, predictions, valid_loader):
         frames_df = valid_loader.dataset.frames
-        if self.target_name == "steering_angle":
-            true_steering_angles = frames_df.steering_angle.to_numpy()
-            metrics = calculate_open_loop_metrics(predictions, true_steering_angles, fps=fps)
 
-            left_turns = frames_df["turn_signal"] == 0  # TODO: remove magic values
-            left_metrics = calculate_open_loop_metrics(predictions[left_turns], true_steering_angles[left_turns], fps=fps)
-            metrics["left_mae"] = left_metrics["mae"]
+        true_steering_angles = frames_df.steering_angle.to_numpy()
+        metrics = calculate_open_loop_metrics(predictions, true_steering_angles, fps=fps)
 
-            straight = frames_df["turn_signal"] == 1
-            straight_metrics = calculate_open_loop_metrics(predictions[straight], true_steering_angles[straight], fps=fps)
-            metrics["straight_mae"] = straight_metrics["mae"]
+        left_turns = frames_df["turn_signal"] == 0  # TODO: remove magic values
+        left_metrics = calculate_open_loop_metrics(predictions[left_turns], true_steering_angles[left_turns], fps=fps)
+        metrics["left_mae"] = left_metrics["mae"]
 
-            right_turns = frames_df["turn_signal"] == 2
-            right_metrics = calculate_open_loop_metrics(predictions[right_turns], true_steering_angles[right_turns], fps=fps)
-            metrics["right_mae"] = right_metrics["mae"]
+        straight = frames_df["turn_signal"] == 1
+        straight_metrics = calculate_open_loop_metrics(predictions[straight], true_steering_angles[straight], fps=fps)
+        metrics["straight_mae"] = straight_metrics["mae"]
 
-        elif self.target_name == "waypoints":
-            true_waypoints = valid_loader.dataset.get_waypoints()
-            metrics = calculate_trajectory_open_loop_metrics(predictions, true_waypoints, fps=fps)
-        else:
-            print(f"Uknown target name {self.target_name}")
-            sys.exit()
+        right_turns = frames_df["turn_signal"] == 2
+        right_metrics = calculate_open_loop_metrics(predictions[right_turns], true_steering_angles[right_turns], fps=fps)
+        metrics["right_mae"] = right_metrics["mae"]
 
         return metrics
 
@@ -501,9 +468,17 @@ class EBMTrainer(Trainer):
         targets = targets[torch.arange(targets.size(0)).unsqueeze(-1), permutation]
         logging.debug(f'permuted targets: {targets.shape} {targets.dtype}')
 
-        # Get the original index of the positive. This will serve as the class label
-        # for the loss.
-        ground_truth = (permutation == 0).nonzero()[:, 1].to(self.device)
+        # Get the original index of the positive.
+        gt_indices = (permutation == 0).nonzero()[:, 1].to(self.device)
+
+        if self.train_conf.ebm_loss_type == 'ce-proximity-aware':
+            temperature = self.train_conf.ce_proximity_aware_temperature
+            gt_indices = (permutation == 0).nonzero()[:, 1]
+            gt_values = targets[range(targets.shape[0]), gt_indices]
+            distances_from_gt = torch.abs(targets - gt_values.unsqueeze(dim=1))**2
+            ground_truth = torch.softmax(-distances_from_gt/temperature, dim=1).squeeze() # gaussian around correct answer
+        else:
+            ground_truth = gt_indices
 
         # For every element in the mini-batch, there is 1 positive for which the EBM
         # should output a low energy value, and N negatives for which the EBM should

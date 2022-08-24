@@ -19,4 +19,5 @@ BAGS=(
 )
 
 
-srun ./extract_rocket.sh ${BAGS[$SLURM_ARRAY_TASK_ID]}  /gpfs/space/projects/Bolt/drives-nikita-thesis
+./extract_rocket.sh ${BAGS[$SLURM_ARRAY_TASK_ID]}  /data/Bolt/drives-nikita-thesis
+python ./image_extractor.py --extract-lidar --bag-file=/gpfs/space/projects/Bolt/bagfiles/$1 --extract-dir=$2

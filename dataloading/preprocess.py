@@ -22,7 +22,7 @@ def parse_arguments():
 
     argparser.add_argument(
         '--dataset-folder',
-        default="/home/romet/data2/datasets/rally-estonia/dataset-new-small/summer2021",
+        default="/home/romet/data2/datasets/rally-estonia/dataset-cropped",
         help='Root path to the dataset.'
     )
 
@@ -37,11 +37,7 @@ def parse_arguments():
 
 def preprocess_dataset(dataset_folder, dataset_name):
     root_path = Path(dataset_folder)
-    if dataset_name:
-        create_waypoints([root_path / dataset_name])
-    else:
-        dataset_paths = get_dataset_paths(root_path)
-        create_waypoints(dataset_paths)
+    if not dataset_name:
         fix_frames(root_path)
 
 
@@ -128,95 +124,6 @@ def get_dataset_paths(root_path):
         #         root_path / "2022-01-25-15-34-01_e2e_rec_vahi_backwards",
     ]
     return dataset_paths
-
-
-def create_waypoints(dataset_paths):
-    for dataset_path in dataset_paths:
-        frames_df = pd.read_csv(dataset_path / "nvidia_frames.csv", index_col='index')
-        frames_df = frames_df[frames_df[f"position_x"].notna()]
-
-        # distance
-        next_pos_df = frames_df.shift(-1)
-        frames_df["distance"] = np.sqrt((next_pos_df.position_x - frames_df.position_x) ** 2 +
-                                        (next_pos_df.position_y - frames_df.position_y) ** 2)
-
-        N_WAYPOINTS = 10
-        WAYPOINT_CAP = 5
-
-        # initialize columns to NaN
-        for wp_i in np.arange(1, N_WAYPOINTS + 1):
-            frames_df[f"wp_steering_{wp_i}"] = np.nan
-
-            frames_df[f"wp{wp_i}_x"] = np.nan
-            frames_df[f"wp{wp_i}_y"] = np.nan
-            frames_df[f"wp{wp_i}_z"] = np.nan
-
-            frames_df[f"wp{wp_i}_center_x"] = np.nan
-            frames_df[f"wp{wp_i}_center_y"] = np.nan
-            frames_df[f"wp{wp_i}_center_z"] = np.nan
-
-            frames_df[f"wp{wp_i}_left_x"] = np.nan
-            frames_df[f"wp{wp_i}_left_y"] = np.nan
-            frames_df[f"wp{wp_i}_left_z"] = np.nan
-
-            frames_df[f"wp{wp_i}_right_x"] = np.nan
-            frames_df[f"wp{wp_i}_right_y"] = np.nan
-            frames_df[f"wp{wp_i}_right_z"] = np.nan
-
-        tm = get_transform_manager()
-
-        progress_bar = tqdm(frames_df.iterrows(), total=frames_df.shape[0])
-        for index, row in progress_bar:
-            progress_bar.set_description(f"Processing {dataset_path.name}")
-
-            window = frames_df[index:]
-            window_cumsum = window['distance'].cumsum()
-
-            base_transform = calculate_waypoint_transform(row)
-
-            for wp_i in np.arange(1, N_WAYPOINTS + 1):  # TODO: vectorize
-                window_index = window_cumsum.searchsorted(wp_i * WAYPOINT_CAP)
-                next_wp = window.iloc[window_index]
-
-                cumsum = window_cumsum[window_index]
-                if math.isnan(cumsum) or math.ceil(cumsum) < wp_i * WAYPOINT_CAP:
-                    break
-
-                frames_df.loc[index, f"wp_steering_{wp_i}"] = next_wp["steering_angle"]
-
-                wp_global = np.array([next_wp["position_x"], next_wp["position_y"], next_wp["position_z"], 1])
-                wp_local = pt.transform(pt.invert_transform(base_transform), wp_global)
-                frames_df.loc[index, f"wp{wp_i}_x"] = wp_local[0]
-                frames_df.loc[index, f"wp{wp_i}_y"] = wp_local[1]
-                frames_df.loc[index, f"wp{wp_i}_z"] = wp_local[2]
-
-                center_cam_transform = tm.get_transform("base_link", "interfacea_link2")
-                wp_center_cam = pt.transform(center_cam_transform, wp_local)
-                # Camera frames are rotated compared to base_link frame (x = z, y = -x, z = -y)
-                frames_df.loc[index, f"wp{wp_i}_center_x"] = wp_center_cam[2]
-                frames_df.loc[index, f"wp{wp_i}_center_y"] = -wp_center_cam[0]
-                frames_df.loc[index, f"wp{wp_i}_center_z"] = -wp_center_cam[1]
-
-                left_cam_transform = tm.get_transform("base_link", "interfacea_link0")
-                wp_left_cam = pt.transform(left_cam_transform, wp_local)
-                frames_df.loc[index, f"wp{wp_i}_left_x"] = wp_left_cam[2]
-                frames_df.loc[index, f"wp{wp_i}_left_y"] = -wp_left_cam[0]
-                frames_df.loc[index, f"wp{wp_i}_left_z"] = -wp_left_cam[1]
-
-                right_cam_transform = tm.get_transform("base_link", "interfacea_link1")
-                wp_right_cam = pt.transform(right_cam_transform, wp_local)
-                frames_df.loc[index, f"wp{wp_i}_right_x"] = wp_right_cam[2]
-                frames_df.loc[index, f"wp{wp_i}_right_y"] = -wp_right_cam[0]
-                frames_df.loc[index, f"wp{wp_i}_right_z"] = -wp_right_cam[1]
-
-        frames_df.to_csv(dataset_path / "nvidia_frames_ext.csv", header=True)
-
-
-def calculate_waypoint_transform(row):
-    rot_mat = pr.active_matrix_from_intrinsic_euler_xyz(np.array([row["roll"], row["pitch"], row["yaw"]]))
-    translate_mat = np.array([row["position_x"], row["position_y"], row["position_z"]])
-    wp_trans = pt.transform_from(rot_mat, translate_mat)
-    return wp_trans
 
 
 def get_transform_manager():
