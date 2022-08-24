@@ -622,14 +622,10 @@ class ClassificationTrainer(Trainer):
         self.target_bins = self.target_bins.to(self.device)
         return clf
 
-    def calc_temporal_regularization(self, logits: Tensor, eval=False) -> Tensor:
+    def calc_temporal_regularization(self, logits: Tensor) -> Tensor:
         """
         Calculate the temporal regularization loss for the given (unshuffled) logits and target indices.
         """
-
-        if self.train_conf.temporal_regularization_ignore_target and not eval:
-            # ignore (always changing) ground truth
-            logits[:, 0] = 0.
 
         odd_samples = logits[::2, :]
         even_samples = logits[1::2, :]
@@ -736,7 +732,7 @@ class ClassificationTrainer(Trainer):
             logging.debug(f'inference time: {inference_time} | avg : {np.mean(inference_times)} | max: {np.max(inference_times)} | min: {np.min(inference_times)}')
 
             if self.train_conf.temporal_regularization:
-                temporal_regularization_loss = self.calc_temporal_regularization(logits, eval=True)
+                temporal_regularization_loss = self.calc_temporal_regularization(logits)
                 epoch_temporal_reg_loss += temporal_regularization_loss.item()
 
             mae = F.l1_loss(preds, target.view(-1, 1))

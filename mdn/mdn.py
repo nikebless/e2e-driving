@@ -49,7 +49,9 @@ class MDN(nn.Module):
 
     def forward(self, minibatch):
         pi = self.pi(minibatch)
-        sigma = F.elu(self.sigma(minibatch)) + 1
+        # advice from here: https://towardsdatascience.com/a-hitchhikers-guide-to-mixture-density-networks-76b435826cca
+        # added after the loss blew up to infinity once.
+        sigma = F.elu(self.sigma(minibatch)) + 1 
         sigma = sigma.view(-1, self.num_gaussians, self.out_features)
         mu = self.mu(minibatch)
         mu = mu.view(-1, self.num_gaussians, self.out_features)
