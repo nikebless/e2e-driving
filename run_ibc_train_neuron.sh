@@ -17,5 +17,6 @@ nohup python train.py \
     --stochastic-optimizer-train-samples 256 \
     --stochastic-optimizer-inference-samples 256 \
     --temporal-regularization 0 \
+    --mdn-n-components 3 \
     --debug \
     &> runs/$(date +%s)-run.txt &
