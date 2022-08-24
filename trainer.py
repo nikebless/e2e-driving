@@ -645,7 +645,8 @@ class ClassificationTrainer(Trainer):
             for i, (data, target_values, condition_mask) in enumerate(dataloader):
                 inputs = data['image'].to(self.device)
                 logits = model(inputs)
-                predictions = torch.argmax(logits, dim=1)
+                preds_indices = torch.argmax(logits, dim=1)
+                predictions = self.target_bins[preds_indices]
                 all_predictions.extend(predictions.cpu().squeeze().numpy())
                 progress_bar.update(1)
 
@@ -721,7 +722,8 @@ class ClassificationTrainer(Trainer):
 
             inference_start = time.time()
             logits = model(inputs)
-            preds = torch.argmax(logits, dim=1)
+            preds_indices = torch.argmax(logits, dim=1)
+            preds = self.target_bins[preds_indices]
             inference_end = time.time()
 
             inference_time = inference_end - inference_start
