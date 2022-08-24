@@ -13,6 +13,7 @@ from torch.nn import functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.nn import L1Loss, MSELoss, CrossEntropyLoss, KLDivLoss
 from torch.distributions import Categorical
+from sklearn.neighbors import NearestCentroid
 
 from tqdm.auto import tqdm
 import wandb
@@ -22,29 +23,10 @@ import logging
 from metrics.metrics import calculate_open_loop_metrics, calculate_trajectory_open_loop_metrics
 
 from ibc import optimizers
-from pilotnet import PilotNet, PilotnetEBM
+from pilotnet import PilotNet, PilotnetEBM, PilotnetClassifier
 from scripts.pt_to_onnx import convert_pt_to_onnx
 
 import train
-
-class WeighedL1Loss(L1Loss):
-    def __init__(self, weights):
-        super().__init__(reduction='none')
-        self.weights = weights
-
-    def forward(self, input: Tensor, target: Tensor) -> Tensor:
-        loss = super().forward(input, target)
-        return (loss * self.weights).mean()
-
-
-class WeighedMSELoss(MSELoss):
-    def __init__(self, weights):
-        super().__init__(reduction='none')
-        self.weights = weights
-
-    def forward(self, input: Tensor, target: Tensor) -> Tensor:
-        loss = super().forward(input, target)
-        return (loss * self.weights).mean()
 
 
 def earth_mover_distance(input: Tensor, target: Tensor, square=False) -> Tensor:
@@ -73,9 +55,9 @@ class KLDivLossWithSoftmax(KLDivLoss):
         return super().forward(input, target)
 
 
-def calculate_step_uncertainty(energy: Tensor) -> Tensor:
-    '''Calculate the uncertainty of an EBM prediction.'''
-    return Categorical(F.softmax(-energy, dim=-1)).entropy().mean() / torch.log(torch.tensor(energy.shape[-1]))
+def calculate_step_uncertainty(prob_distribution: Tensor) -> Tensor:
+    '''Calculate an average normalized entropy of probability distributions over time.'''
+    return Categorical(F.softmax(prob_distribution, dim=-1)).entropy().mean() / torch.log(torch.tensor(prob_distribution.shape[-1]))
 
 class Trainer:
 
@@ -90,7 +72,7 @@ class Trainer:
                 self.criterion = MSELoss()
             elif train_conf.loss == "mae":
                 self.criterion = L1Loss()
-            elif train_conf.loss == "ebm":
+            elif train_conf.loss == "ce":
                 # MAE will be used in evaluation
                 self.criterion = CrossEntropyLoss()
             else:
@@ -471,9 +453,8 @@ class EBMTrainer(Trainer):
         # Get the original index of the positive.
         gt_indices = (permutation == 0).nonzero()[:, 1].to(self.device)
 
-        if self.train_conf.ebm_loss_type == 'ce-proximity-aware':
+        if self.train_conf.loss_variant == 'ce-proximity-aware':
             temperature = self.train_conf.ce_proximity_aware_temperature
-            gt_indices = (permutation == 0).nonzero()[:, 1]
             gt_values = targets[range(targets.shape[0]), gt_indices]
             distances_from_gt = torch.abs(targets - gt_values.unsqueeze(dim=1))**2
             ground_truth = torch.softmax(-distances_from_gt/temperature, dim=1).squeeze() # gaussian around correct answer
@@ -554,7 +535,7 @@ class EBMTrainer(Trainer):
                 epoch_temporal_reg_loss += temporal_regularization_loss.item()
 
             mae = F.l1_loss(preds, target.view(-1, 1))
-            entropy = calculate_step_uncertainty(energy)
+            entropy = calculate_step_uncertainty(-energy)
             epoch_mae += mae.item()
             epoch_entropy += entropy.item()
 
@@ -595,3 +576,177 @@ class EBMTrainer(Trainer):
                 wandb.save(pure_model_path)
                 wandb.save(dfo_model_path)
 
+class ClassificationTrainer(Trainer):
+
+    temporal_regularization_options = {
+        'l1': torch.nn.L1Loss(),
+        'l2': torch.nn.MSELoss(),
+        'emd': earth_mover_distance,
+        'emd-squared': lambda a, b: earth_mover_distance(a, b, True),
+        'kldiv': KLDivLossWithSoftmax(),
+    }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.train_conf = kwargs['train_conf']
+        self.model = PilotnetClassifier(self.train_conf.stochastic_optimizer_train_samples)
+        self.model.to(self.device)
+
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.train_conf.learning_rate, betas=(0.9, 0.999),
+                                           eps=1e-08, weight_decay=self.train_conf.weight_decay, amsgrad=False)
+
+        self.temporal_regularization_criterion = self.temporal_regularization_options[self.train_conf.temporal_regularization_type]
+        self.steps = 0
+        self.reg_weight = self.train_conf.temporal_regularization
+        self.target_bounds = torch.tensor([[-self.train_conf.steering_bound], [self.train_conf.steering_bound]]).to(self.device)
+
+        # action space discretization
+        self.discretizer = self.make_discretizer(self.train_conf)
+
+    def make_discretizer(self, train_conf):
+        lower_bound = self.target_bounds[0, 0]
+        upper_bound = self.target_bounds[1, 0]
+        n_samples = train_conf.stochastic_optimizer_train_samples
+        self.target_bins = torch.linspace(lower_bound, upper_bound, steps=n_samples, dtype=torch.float32)
+        
+        X = np.expand_dims(self.target_bins, 1)
+        y = np.arange(self.target_bins.shape[0])
+        clf = NearestCentroid()
+        clf.fit(X, y)
+
+        self.target_bins = self.target_bins.to(self.device)
+        return clf
+
+    def calc_temporal_regularization(self, logits: Tensor, eval=False) -> Tensor:
+        """
+        Calculate the temporal regularization loss for the given (unshuffled) logits and target indices.
+        """
+
+        if self.train_conf.temporal_regularization_ignore_target and not eval:
+            # ignore (always changing) ground truth
+            logits[:, 0] = 0.
+
+        odd_samples = logits[::2, :]
+        even_samples = logits[1::2, :]
+
+        if odd_samples.shape != even_samples.shape: return 0
+
+        return self.temporal_regularization_criterion(odd_samples, even_samples)
+
+    def predict(self, _, dataloader):
+        all_predictions = []
+        model = self.model
+        model.eval()
+
+        with torch.no_grad():
+            progress_bar = tqdm(total=len(dataloader), smoothing=0)
+            progress_bar.set_description("Model predictions")
+            for i, (data, target_values, condition_mask) in enumerate(dataloader):
+                inputs = data['image'].to(self.device)
+                logits = model(inputs)
+                predictions = torch.argmax(logits, dim=1)
+                all_predictions.extend(predictions.cpu().squeeze().numpy())
+                progress_bar.update(1)
+
+        return np.array(all_predictions)
+
+    def train_batch(self, _, input, target, __, ___):
+        inputs = input['image'].to(self.device)
+        # target = target.to(self.device, torch.float32)
+
+        logging.debug(f'inputs: {inputs.shape} {inputs.dtype}')
+        logging.debug(f'target: {target.shape} {target.dtype}')
+
+        # Get the original index of the positive.
+        gt_indices = torch.from_numpy(self.discretizer.predict(target)).to(self.device)
+
+        if self.train_conf.loss_variant == 'ce-proximity-aware':
+            temperature = self.train_conf.ce_proximity_aware_temperature
+            distances_from_gt = torch.abs(self.target_bins - target)**2
+            ground_truth = torch.softmax(-distances_from_gt/temperature, dim=1).squeeze() # gaussian around correct answer
+        else:
+            ground_truth = gt_indices
+
+        logits = self.model(inputs)
+
+        loss = self.criterion(logits, ground_truth)
+        temporal_regularization_loss = None
+
+        if self.train_conf.temporal_regularization:
+            # calculate weight
+            reg_weight = self.train_conf.temporal_regularization
+
+            if self.train_conf.temporal_regularization_schedule == 'exponential':
+                k = self.train_conf.temporal_regularization_schedule_k
+                reg_weight *= 1-math.exp(-1 * k * self.steps)
+            elif self.train_conf.temporal_regularization_schedule == 'linear':
+                n = self.train_conf.temporal_regularization_schedule_n
+                reg_weight *= self.steps * n
+
+            self.reg_weight = reg_weight
+            logging.debug('temporal regularization weight: {}'.format(reg_weight))
+
+            # calculcate loss
+            temporal_regularization_loss = self.calc_temporal_regularization(logits)
+            loss += reg_weight * temporal_regularization_loss
+
+        self.optimizer.zero_grad(set_to_none=True)
+        self.steps += 1
+
+        if temporal_regularization_loss is not None:
+            return logits, loss, temporal_regularization_loss.item()
+
+        return logits, loss
+
+    @torch.no_grad()
+    def evaluate(self, _, iterator, __, progress_bar, epoch, train_loss):
+        model = self.model
+        model.eval()
+        all_predictions = []
+
+        inference_times = []
+
+        epoch_mae = 0.0
+        epoch_temporal_reg_loss = 0.0
+        epoch_entropy = 0.0
+        ask_batch_timestamp = time.time()
+        for i, (input, target, _) in enumerate(iterator):
+            recv_batch_timestap = time.time()
+            logging.debug(f'\nModel waited for batch: {(recv_batch_timestap - ask_batch_timestamp) * 1000:.2f} ms')
+
+            inputs = input['image'].to(self.device)
+            target = target.to(self.device, torch.float32)
+            logging.debug(f'target.shape: {target.shape}, target.dtype: {target.dtype}, min: {target.min()}, max: {target.max()}')
+
+            inference_start = time.time()
+            logits = model(inputs)
+            preds = torch.argmax(logits, dim=1)
+            inference_end = time.time()
+
+            inference_time = inference_end - inference_start
+            inference_times.append(inference_time)
+
+            logging.debug(f'inference time: {inference_time} | avg : {np.mean(inference_times)} | max: {np.max(inference_times)} | min: {np.min(inference_times)}')
+
+            if self.train_conf.temporal_regularization:
+                temporal_regularization_loss = self.calc_temporal_regularization(logits, eval=True)
+                epoch_temporal_reg_loss += temporal_regularization_loss.item()
+
+            mae = F.l1_loss(preds, target.view(-1, 1))
+            entropy = calculate_step_uncertainty(logits)
+            epoch_mae += mae.item()
+            epoch_entropy += entropy.item()
+
+            all_predictions.extend(preds.cpu().squeeze().numpy())
+
+            progress_bar.update(1)
+            progress_bar.set_description(f'epoch {epoch + 1} | train loss: {train_loss:.4f} | valid loss: {(epoch_mae / (i + 1)):.4f} | valid temporal reg loss: {(epoch_temporal_reg_loss / (i + 1)):.4f}')
+
+            ask_batch_timestamp = time.time()
+
+        avg_mae = epoch_mae / len(iterator)
+        avg_temp_reg_loss = epoch_temporal_reg_loss / len(iterator)
+        avg_entropy = epoch_entropy / len(iterator)
+        result = np.array(all_predictions)
+        return avg_mae, result, avg_temp_reg_loss, avg_entropy

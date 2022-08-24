@@ -27,7 +27,7 @@ def parse_arguments():
     argparser.add_argument(
         '--model-type',
         required=True,
-        choices=['pilotnet', 'pilotnet-ebm'],
+        choices=['pilotnet', 'pilotnet-ebm', 'pilotnet-classifier'],
         help='Defines which model will be trained.'
     )
 
@@ -132,7 +132,7 @@ def parse_arguments():
     argparser.add_argument(
         '--loss',
         required=False,
-        choices=['mse', 'mae', 'mse-weighted', 'mae-weighted', 'ebm'],
+        choices=['mse', 'mae', 'mse-weighted', 'mae-weighted', 'ce'],
         default='mae',
         help='Loss function used for training.'
     )
@@ -231,11 +231,11 @@ def parse_arguments():
     )
 
     argparser.add_argument(
-        '--ebm-loss-type',
+        '--loss-variant',
         required=False,
-        choices=['ce', 'ce-proximity-aware'],
-        default='ce',
-        help='Type of EBM loss used for EBM training.'
+        choices=['default', 'ce-proximity-aware'],
+        default='default',
+        help='Variant of loss used during training.'
     )
 
     argparser.add_argument(
@@ -273,6 +273,7 @@ class TrainingConfig:
         self.debug = args.debug
         self.learning_rate = args.learning_rate
         self.loss = args.loss
+        self.loss_variant = args.loss_variant
         self.max_epochs = args.max_epochs
         self.model_type = args.model_type
         self.num_workers = args.num_workers
@@ -291,7 +292,6 @@ class TrainingConfig:
         self.use_constant_samples = args.use_constant_samples
         self.wandb_project = args.wandb_project
         self.weight_decay = args.weight_decay
-        self.ebm_loss_type = args.ebm_loss_type
         self.ce_proximity_aware_temperature = args.ce_proximity_aware_temperature
 
         log_format = "%(message)s"
@@ -326,6 +326,8 @@ def train_model(model_name, train_conf):
         trainer = trainers.PilotNetTrainer(model_name=model_name, train_conf=train_conf)
     elif train_conf.model_type == "pilotnet-ebm":
         trainer = trainers.EBMTrainer(model_name=model_name, train_conf=train_conf)
+    elif train_conf.model_type == "pilotnet-classifier":
+        trainer = trainers.ClassificationTrainer(model_name=model_name, train_conf=train_conf)
     else:
         print(f"Unknown model type {train_conf.model_type}")
         sys.exit()
