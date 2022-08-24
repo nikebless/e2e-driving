@@ -9,4 +9,5 @@ __pycache__
 /experiments/
 /runs/
 /temp/
+slurm*
 **/front_wide/*.png

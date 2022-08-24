@@ -98,8 +98,8 @@ class NvidiaDriveImporter:
             root_folder = Path(self.extract_dir) / bag_path.stem
         else:  # extract to same directory where bag is
             root_folder = Path(bag_path.parent) / bag_path.stem
-        shutil.rmtree(root_folder, ignore_errors=True)
-        root_folder.mkdir(parents=True)
+        # shutil.rmtree(root_folder, ignore_errors=True)
+        root_folder.mkdir(parents=True, exist_ok=True)
 
         for camera_topic in self.nvidia_topics:
             camera_name = self.topic_to_camera_name_map[camera_topic]

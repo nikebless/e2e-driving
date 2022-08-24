@@ -35,9 +35,5 @@ srun python -u train.py \
     --steering-bound 4.5 \
     --use-constant-samples \
     --temporal-group-size 2 \
-    --temporal-regularization 100 \
-    --temporal-regularization-type emd \
-    --temporal-regularization-ignore-target \
-    --temporal-regularization-schedule linear \
-    --temporal-regularization-schedule-k 0.0003 \
-    --temporal-regularization-schedule-n 2000 \
+    --temporal-regularization 0 \
+    --temporal-regularization-type l2 \

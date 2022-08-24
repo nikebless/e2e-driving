@@ -6,16 +6,35 @@
 #SBATCH --partition=main
 #SBATCH --mem=40G
 
-#SBATCH --array=0-8
+#SBATCH --array=0-26
 BAGS=(
-    '/data/Bolt/bagfiles/2022-08-04-16-33-18_elva_back_ebm_regularized_v1.bag' \
-    '/data/Bolt/bagfiles/2022-08-04-16-45-09_elva_forward_ebm_regularized_v1.bag' \
-    '/data/Bolt/bagfiles/2022-08-04-16-59-31_elva_back_ebm_regularized_v2.bag' \
-    '/data/Bolt/bagfiles/2022-08-04-17-11-04_elva_forward_ebm_regularized_v2.bag' \
-    '/data/Bolt/bagfiles/2022-08-04-17-21-58_elva_back_ebm_regularized_v3.bag' \
-    '/data/Bolt/bagfiles/2022-08-04-17-33-33_elva_forward_ebm_regularized_v3.bag' \
-    '/data/Bolt/bagfiles/2022-08-04-17-51-50_elva_back_ebm_unregularized_v1.bag' \
-    '/data/Bolt/bagfiles/2022-08-04-18-03-44_elva_forward_ebm_unregularized_v1.bag' \
+    '2022-08-04-16-33-18_elva_back_ebm_regularized_v1.bag' \
+    '2022-08-04-16-45-09_elva_forward_ebm_regularized_v1.bag' \
+    '2022-08-04-16-59-31_elva_back_ebm_regularized_v2.bag' \
+    '2022-08-04-17-11-04_elva_forward_ebm_regularized_v2.bag' \
+    '2022-08-04-17-21-58_elva_back_ebm_regularized_v3.bag' \
+    '2022-08-04-17-33-33_elva_forward_ebm_regularized_v3.bag' \
+    '2022-08-04-17-51-50_elva_back_ebm_unregularized_v1.bag' \
+    '2022-08-04-18-03-44_elva_forward_ebm_unregularized_v1.bag' \
+    '2022-08-05-09-35-59_elva_forward_ebm_unregularized_v2.bag' \
+    '2022-08-05-09-47-52_elva_back_ebm_unregularized_v2.bag' \
+    '2022-08-05-10-14-43_elva_forward_ebm_unregularized_v3.bag' \
+    '2022-08-05-10-29-45_elva_back_ebm_unregularized_v3.bag' \
+    '2022-08-05-10-58-19_elva_forward_mae_v1.bag' \
+    '2022-08-05-11-09-21_elva_back_mae_v1_large_blank.bag' \
+    '2022-08-05-15-01-41_elva_back_mae_v1.bag' \
+    '2022-08-05-15-13-34_elva_forward_mae_v2.bag' \
+    '2022-08-05-15-24-15_elva_back_mae_v2.bag' \
+    '2022-08-05-15-35-19_elva_forward_mae_v3.bag' \
+    '2022-08-05-15-46-06_elva_back_mae_v3.bag' \
+    '2022-08-05-16-01-25_elva_forward_mae_50%_v1.bag' \
+    '2022-08-05-16-14-12_elva_back_mae_10%_v1.bag' \
+    '2022-08-05-16-24-39_elva_forward_ebm_10%_v1.bag' \
+    '2022-08-05-16-41-01_elva_back_ebm_unregularized_v2.bag' \
+    '2022-08-05-16-52-29_elva_forward_ebm_unregularized_v2.bag' \
+    '2022-08-05-17-04-06_elva_back_ebm_unregularized_v3.bag' \
+    '2022-08-05-17-15-21_elva_forward_ebm_unregularized_v3.bag' \
+    '2022-08-05-17-34-49_elva_forward_mae_v1.bag' \
 )
 
 
