@@ -1,0 +1,2 @@
+mae_trajectory,rmse_trajectory,failure_rate,interventions,whiteness_eff,distance_per_intervention,cmd_whiteness,mae_steer_offline,rmse_steer_offline,cmd_whiteness_offline,uncertainty
+-0.11387731935096751,0.04136966844432698,0.20756472388023334,-0.9387716029477915,-0.1813070828610294,1.0,0.5053465847148795,-0.05356559672602273,-0.10782628894131957,0.20848677327921733,-0.025817315031413525
