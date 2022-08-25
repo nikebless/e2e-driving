@@ -1,4 +1,4 @@
-# Energy-Based Models for End-to-End Driving (Rally Estonia)
+# Energy-Based Models for End-to-End Driving
 
 Train end-to-end driving models using Rally Estonia dataset.
 
