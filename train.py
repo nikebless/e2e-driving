@@ -144,21 +144,21 @@ def parse_arguments():
     )
 
     argparser.add_argument(
-        '--stochastic-optimizer-train-samples',
+        '--ebm-train-samples',
         type=int,
         default=128,
         help='Number of counterexamples used for EBM training.'
     )
 
     argparser.add_argument(
-        '--stochastic-optimizer-inference-samples',
+        '--ebm-inference-samples',
         type=int,
-        default=2**10, 
+        default=128,
         help='Number of samples used for test-time EBM inference.'
     )
 
     argparser.add_argument(
-        '--stochastic-optimizer-iters',
+        '--ebm-dfo-iters',
         type=int,
         default=0, 
         help='Number of DFO iterations used for test-time EBM inference.'
@@ -167,12 +167,12 @@ def parse_arguments():
     argparser.add_argument(
         '--steering-bound',
         type=float,
-        default=8.0,
+        default=4.5,
         help='Steering angle bound norm.'
     )
     
     argparser.add_argument(
-        '--use-constant-samples',
+        '--ebm-constant-samples',
         default=True,
         action='store_true',
         help='Use a constant action grid instead of random sample each time as negatives for EBM training & inference.'
@@ -193,42 +193,11 @@ def parse_arguments():
     )
 
     argparser.add_argument(
-        '--temporal-regularization-ignore-target',
-        required=False,
-        action='store_true',
-        default=True,
-        help='Ignore true target action for temporal regularization. Only regularize the negatives.'
-    )
-
-    argparser.add_argument(
         '--temporal-regularization-type',
         required=False,
         choices=['crossentropy', 'l1', 'l2', 'emd', 'emd-squared', 'kldiv'],
         default='l2',
         help='Type of temporal regularization used for EBM training.'
-    )
-
-    argparser.add_argument(
-        '--temporal-regularization-schedule',
-        required=False,
-        choices=['constant', 'linear', 'exponential'],
-        default='constant',
-    )
-
-    argparser.add_argument(
-        '--temporal-regularization-schedule-k',
-        required=False,
-        type=float,
-        default=0.003,
-        help='Temporal regularization growth parameter.'
-    )
-
-    argparser.add_argument(
-        '--temporal-regularization-schedule-n',
-        required=False,
-        type=int,
-        default=400,
-        help='Number of learning steps for regularization weight to reach `temporal-regularization`.'
     )
 
     argparser.add_argument(
@@ -277,9 +246,14 @@ class TrainingConfig:
         self.batch_sampler = args.batch_sampler
         self.batch_size = args.batch_size
         self.camera_name = args.camera_name
+        self.ce_proximity_aware_temperature = args.ce_proximity_aware_temperature
         self.dataset_folder = args.dataset_folder
         self.dataset_proportion = args.dataset_proportion
         self.debug = args.debug
+        self.ebm_constant_samples = args.ebm_constant_samples
+        self.ebm_dfo_iters = args.ebm_dfo_iters
+        self.ebm_inference_samples = args.ebm_inference_samples
+        self.ebm_train_samples = args.ebm_train_samples
         self.learning_rate = args.learning_rate
         self.loss = args.loss
         self.loss_variant = args.loss_variant
@@ -289,20 +263,11 @@ class TrainingConfig:
         self.num_workers = args.num_workers
         self.patience = args.patience
         self.steering_bound = args.steering_bound
-        self.stochastic_optimizer_inference_samples = args.stochastic_optimizer_inference_samples
-        self.stochastic_optimizer_iters = args.stochastic_optimizer_iters
-        self.stochastic_optimizer_train_samples = args.stochastic_optimizer_train_samples
         self.temporal_group_size = args.temporal_group_size
         self.temporal_regularization = args.temporal_regularization
-        self.temporal_regularization_ignore_target = args.temporal_regularization_ignore_target
-        self.temporal_regularization_schedule = args.temporal_regularization_schedule
-        self.temporal_regularization_schedule_k = args.temporal_regularization_schedule_k
-        self.temporal_regularization_schedule_n = args.temporal_regularization_schedule_n
         self.temporal_regularization_type = args.temporal_regularization_type
-        self.use_constant_samples = args.use_constant_samples
         self.wandb_project = args.wandb_project
         self.weight_decay = args.weight_decay
-        self.ce_proximity_aware_temperature = args.ce_proximity_aware_temperature
 
         log_format = "%(message)s"
         if self.debug:

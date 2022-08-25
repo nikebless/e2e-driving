@@ -18,22 +18,17 @@
 # Actual job command(s)
 
 srun python -u train.py \
-    --input-modality nvidia-camera \
-    --output-modality steering_angle \
     --patience 10 \
     --max-epochs 100 \
     --model-name steering-angle \
     --model-type pilotnet-ebm \
-    --loss ebm \
+    --loss ce \
+    --loss-variant default \
     --dataset-folder /gpfs/space/projects/Bolt/dataset-cropped \
     --batch-size 512 \
     --num-workers 16 \
     --wandb-project ibc \
-    --stochastic-optimizer-train-samples 1024 \
-    --stochastic-optimizer-inference-samples 1024 \
-    --stochastic-optimizer-iters 0 \
-    --steering-bound 4.5 \
-    --use-constant-samples \
-    --temporal-group-size 2 \
+    --ebm-train-samples 512 \
+    --ebm-inference-samples 512 \
     --temporal-regularization 0 \
-    --temporal-regularization-type l2 \
+

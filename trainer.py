@@ -259,8 +259,6 @@ class Trainer:
 
             progress_bar.update(1)
             pbar_description = f'epoch {epoch+1} | train loss: {(running_loss / (i + 1)):.4f} | temp reg loss: {running_temporal_reg_loss / (i+1):.4f}'
-            if hasattr(self, 'reg_weight'):
-                pbar_description += f' | reg weight: {self.reg_weight:.4f}'
             progress_bar.set_description(pbar_description)
 
             ask_batch_timestamp = time.time()
@@ -359,7 +357,7 @@ class EBMTrainer(Trainer):
         self.model.to(self.device)
         self.train_conf = kwargs['train_conf']
 
-        optim_config, stochastic_optim_config = self._initialize_config(self.train_conf)
+        optim_config, inference_config = self._initialize_config(self.train_conf)
 
         self.optimizer = torch.optim.Adam(
             self.model.parameters(),
@@ -374,13 +372,12 @@ class EBMTrainer(Trainer):
             gamma=optim_config.lr_scheduler_gamma,
         )
 
-        inference_wrapper = optimizers.DFOptimizerConst if self.train_conf.use_constant_samples else optimizers.DFOptimizer
+        inference_wrapper = optimizers.DFOptimizerConst if self.train_conf.ebm_constant_samples else optimizers.DFOptimizer
 
         self.temporal_regularization_criterion = self.temporal_regularization_options[self.train_conf.temporal_regularization_type]
-        self.inference_model = inference_wrapper(self.model, stochastic_optim_config)
+        self.inference_model = inference_wrapper(self.model, inference_config)
         self.inference_model.to(self.device)
         self.steps = 0
-        self.reg_weight = self.train_conf.temporal_regularization
 
     def _initialize_config(self, train_conf):
         """Initialize train state based on config values."""
@@ -391,21 +388,21 @@ class EBMTrainer(Trainer):
         )
 
         target_bounds = torch.tensor([[-train_conf.steering_bound], [train_conf.steering_bound]]).to(self.device)
-        stochastic_optim_config = optimizers.DerivativeFreeConfig(
+        inference_config = optimizers.DerivativeFreeConfig(
             bounds=target_bounds,
-            train_samples=train_conf.stochastic_optimizer_train_samples,
-            inference_samples=train_conf.stochastic_optimizer_inference_samples,
-            iters=train_conf.stochastic_optimizer_iters,
+            train_samples=train_conf.ebm_train_samples,
+            inference_samples=train_conf.ebm_inference_samples,
+            iters=train_conf.ebm_dfo_iters,
         )
 
-        return optim_config, stochastic_optim_config
+        return optim_config, inference_config
 
     def calc_temporal_regularization(self, logits: Tensor, eval=False) -> Tensor:
         """
         Calculate the temporal regularization loss for the given (unshuffled) logits and target indices.
         """
 
-        if self.train_conf.temporal_regularization_ignore_target and not eval:
+        if not eval:
             # ignore (always changing) ground truth
             logits[:, 0] = 0.
 
@@ -477,20 +474,7 @@ class EBMTrainer(Trainer):
         temporal_regularization_loss = None
 
         if self.train_conf.temporal_regularization:
-            # calculate weight
             reg_weight = self.train_conf.temporal_regularization
-
-            if self.train_conf.temporal_regularization_schedule == 'exponential':
-                k = self.train_conf.temporal_regularization_schedule_k
-                reg_weight *= 1-math.exp(-1 * k * self.steps)
-            elif self.train_conf.temporal_regularization_schedule == 'linear':
-                n = self.train_conf.temporal_regularization_schedule_n
-                reg_weight *= self.steps * n
-
-            self.reg_weight = reg_weight
-            logging.debug('temporal regularization weight: {}'.format(reg_weight))
-
-            # calculcate loss
             logits_unshuffled = logits[torch.arange(logits.size(0)).unsqueeze(-1), torch.argsort(permutation)]
             temporal_regularization_loss = self.calc_temporal_regularization(logits_unshuffled)
             loss += reg_weight * temporal_regularization_loss
@@ -569,8 +553,8 @@ class EBMTrainer(Trainer):
                               '--samples', str(self.inference_model.inference_samples), '--bs', '1',
                                '--steering-bound', str(self.inference_model.bounds.max().item())]
 
-            if self.train_conf.use_constant_samples:
-                dfo_model_args.append('--use-constant-samples')
+            if self.train_conf.ebm_constant_samples:
+                dfo_model_args.append('--ebm-constant-samples')
             
             pure_model_path = convert_pt_to_onnx(pure_model_args)
             dfo_model_path = convert_pt_to_onnx(dfo_model_args)
@@ -594,7 +578,7 @@ class ClassificationTrainer(Trainer):
         super().__init__(*args, **kwargs)
 
         self.train_conf = kwargs['train_conf']
-        self.model = PilotnetClassifier(self.train_conf.stochastic_optimizer_train_samples)
+        self.model = PilotnetClassifier(self.train_conf.ebm_train_samples)
         self.model.to(self.device)
 
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.train_conf.learning_rate, betas=(0.9, 0.999),
@@ -602,7 +586,6 @@ class ClassificationTrainer(Trainer):
 
         self.temporal_regularization_criterion = self.temporal_regularization_options[self.train_conf.temporal_regularization_type]
         self.steps = 0
-        self.reg_weight = self.train_conf.temporal_regularization
         self.target_bounds = torch.tensor([[-self.train_conf.steering_bound], [self.train_conf.steering_bound]]).to(self.device)
 
         # action space discretization
@@ -611,7 +594,7 @@ class ClassificationTrainer(Trainer):
     def make_discretizer(self, train_conf):
         lower_bound = self.target_bounds[0, 0]
         upper_bound = self.target_bounds[1, 0]
-        n_samples = train_conf.stochastic_optimizer_train_samples
+        n_samples = train_conf.ebm_train_samples
         self.target_bins = torch.linspace(lower_bound, upper_bound, steps=n_samples, dtype=torch.float32)
         
         X = np.expand_dims(self.target_bins, 1)
@@ -675,20 +658,7 @@ class ClassificationTrainer(Trainer):
         temporal_regularization_loss = None
 
         if self.train_conf.temporal_regularization:
-            # calculate weight
             reg_weight = self.train_conf.temporal_regularization
-
-            if self.train_conf.temporal_regularization_schedule == 'exponential':
-                k = self.train_conf.temporal_regularization_schedule_k
-                reg_weight *= 1-math.exp(-1 * k * self.steps)
-            elif self.train_conf.temporal_regularization_schedule == 'linear':
-                n = self.train_conf.temporal_regularization_schedule_n
-                reg_weight *= self.steps * n
-
-            self.reg_weight = reg_weight
-            logging.debug('temporal regularization weight: {}'.format(reg_weight))
-
-            # calculcate loss
             temporal_regularization_loss = self.calc_temporal_regularization(logits)
             loss += reg_weight * temporal_regularization_loss
 

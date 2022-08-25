@@ -338,14 +338,6 @@ if __name__ == "__main__":
         choices=['driving', 'prediction'],
         help="Type of the video, 'driving' or 'prediction'."
     )
-
-    argparser.add_argument(
-        '--output-modality',
-        default="steering_angle",
-        choices=["steering_angle", "waypoints"],
-        help="Choice of output modality to visualise."
-    )
-
     argparser.add_argument(
         '--model-path',
         nargs='+', # 1 or more
@@ -366,20 +358,6 @@ if __name__ == "__main__":
         nargs='+',
         default=['pilotnet'],
         help='Name of the model used for saving model and logging in W&B.'
-    )
-
-    argparser.add_argument(
-        '--input-modality',
-        required=True,
-        choices=['nvidia-camera', 'nvidia-camera-winter', 'nvidia-camera-all', 'ouster-lidar'],
-    )
-
-    argparser.add_argument(
-        '--lidar-channel',
-        required=False,
-        choices=['ambience', 'intensity', 'range'],
-        help="Lidar channels to use for training. Combined image is used if not provided. "
-             "Only applies to 'ouster-lidar' modality."
     )
 
     argparser.add_argument(
@@ -412,9 +390,9 @@ if __name__ == "__main__":
     )
 
     argparser.add_argument(
-        '--stochastic-optimizer-inference-samples',
+        '--ebm-inference-samples',
         type=int,
-        default=2**10, 
+        default=128, 
         help='Number of samples used for test-time EBM inference.'
     )
 
@@ -434,7 +412,7 @@ if __name__ == "__main__":
     args.batch_sampler = None
     args.wandb_project = ''
     args.loss = 'ebm'
-    args.stochastic_optimizer_train_samples = 0
+    args.ebm_train_samples = 0
     args.pretrained_model = False
 
     conf = train.TrainingConfig(args)

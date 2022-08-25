@@ -21,14 +21,14 @@ def convert_pt_to_onnx(model_path, batch_size, output_path, with_choice, n_sampl
 
     model = PilotnetEBM()
     if with_choice:
-        stochastic_optim_config = optimizers.DerivativeFreeConfig(
+        inference_config = optimizers.DerivativeFreeConfig(
             bounds=torch.tensor([[-args['steering_bound']], [args['steering_bound']]]),
             train_samples=0,
             inference_samples=n_samples,
             iters=iters,
         )
-        inference_wrapper = optimizers.DFOptimizerConst if args['use_constant_samples'] else optimizers.DFOptimizer
-        model = inference_wrapper(model, stochastic_optim_config)
+        inference_wrapper = optimizers.DFOptimizerConst if args['ebm_constant_samples'] else optimizers.DFOptimizer
+        model = inference_wrapper(model, inference_config)
 
     model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
     model.to(device)

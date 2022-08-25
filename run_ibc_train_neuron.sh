@@ -14,8 +14,8 @@ nohup python train.py \
     --dataset-folder /data/Bolt/dataset-cropped \
     --batch-size 512 \
     --num-workers 16 \
-    --stochastic-optimizer-train-samples 256 \
-    --stochastic-optimizer-inference-samples 256 \
+    --ebm-train-samples 256 \
+    --ebm-inference-samples 256 \
     --temporal-regularization 0 \
     --mdn-n-components 3 \
     --debug \
