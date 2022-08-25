@@ -212,8 +212,8 @@ def parse_arguments():
         '--ce-proximity-aware-temperature',
         required=False,
         type=float,
-        default=0.05, # pretty low, we want sharp peaks
-        help='Temperature for gaussian distribution around truth as CE target for EBM training.'
+        default=0.0025, # tiny to have sharp peaks (99.9% prob mass under ~±6 degrees with bounds [-4.5, 4.5])
+        help='Temperature for gaussian distribution around truth as CE target for EBM training. Used only when loss-variant is set to "ce-proximity-aware".'
     )
 
     argparser.add_argument(

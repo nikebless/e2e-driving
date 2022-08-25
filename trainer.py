@@ -4,7 +4,6 @@ from datetime import datetime
 from pathlib import Path
 import uuid
 
-import math
 import numpy as np
 import onnx
 import torch
@@ -455,7 +454,7 @@ class EBMTrainer(Trainer):
 
         if self.train_conf.loss_variant == 'ce-proximity-aware':
             temperature = self.train_conf.ce_proximity_aware_temperature
-            gt_values = targets[range(targets.shape[0]), gt_indices]
+            gt_values = targets[torch.arange(targets.shape[0], device=self.device), gt_indices]
             distances_from_gt = torch.abs(targets - gt_values.unsqueeze(dim=1))**2
             ground_truth = torch.softmax(-distances_from_gt/temperature, dim=1).squeeze() # gaussian around correct answer
         else:
@@ -637,13 +636,13 @@ class ClassificationTrainer(Trainer):
 
     def train_batch(self, _, input, target, __, ___):
         inputs = input['image'].to(self.device)
-        # target = target.to(self.device, torch.float32)
 
         logging.debug(f'inputs: {inputs.shape} {inputs.dtype}')
         logging.debug(f'target: {target.shape} {target.dtype}')
 
         # Get the original index of the positive.
         gt_indices = torch.from_numpy(self.discretizer.predict(target)).to(self.device)
+        target = target.to(self.device, torch.float32)
 
         if self.train_conf.loss_variant == 'ce-proximity-aware':
             temperature = self.train_conf.ce_proximity_aware_temperature
