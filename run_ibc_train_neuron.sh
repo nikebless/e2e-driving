@@ -11,7 +11,7 @@ nohup python train.py \
     --model-name steering-angle \
     --model-type pilotnet-mdn \
     --loss ce \
-    --dataset-folder /data/Bolt/dataset-cropped \
+    --dataset-folder /data/Bolt/end-to-end/rally-estonia-cropped \
     --batch-size 512 \
     --num-workers 16 \
     --ebm-train-samples 256 \

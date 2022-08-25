@@ -22,7 +22,7 @@ import logging
 
 from metrics.metrics import calculate_open_loop_metrics
 
-from ibc import optimizers
+from ebm import optimizers
 from mdn.mdn import sample as mdn_sample, mdn_loss
 from pilotnet import PilotNet, PilotnetEBM, PilotnetClassifier, PilotnetMDN
 from scripts.pt_to_onnx import convert_pt_to_onnx

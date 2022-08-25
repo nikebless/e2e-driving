@@ -24,10 +24,10 @@ srun python -u train.py \
     --model-type pilotnet-ebm \
     --loss ce \
     --loss-variant default \
-    --dataset-folder /gpfs/space/projects/Bolt/dataset-cropped \
+    --dataset-folder /gpfs/space/projects/Bolt/end-to-end/rally-estonia-cropped \
     --batch-size 512 \
     --num-workers 16 \
-    --wandb-project ibc \
+    --wandb-project ebm-e2e \
     --ebm-train-samples 512 \
     --ebm-inference-samples 512 \
     --temporal-regularization 0 \

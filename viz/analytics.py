@@ -10,7 +10,7 @@ from torchvision import transforms
 
 
 def create_steering_angle_error_plot(model, trainer, dataset_name):
-    root_path = Path("/home/romet/data2/datasets/rally-estonia/dataset-cropped")
+    root_path = Path("/home/romet/data2/datasets/rally-estonia/end-to-end/rally-estonia-cropped")
     tr = transforms.Compose([Normalize()])
     dataset = NvidiaDataset([root_path / dataset_name], transform=tr)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=32, shuffle=False, num_workers=16)

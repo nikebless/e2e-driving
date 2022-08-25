@@ -41,7 +41,7 @@ def parse_arguments():
 
     argparser.add_argument(
         '--dataset-folder',
-        default="/home/romet/data2/datasets/rally-estonia/dataset-cropped",
+        default="/gpfs/space/projects/Bolt/end-to-end/rally-estonia-cropped",
         help='Root path to the dataset.'
     )
 

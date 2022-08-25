@@ -338,7 +338,7 @@ def draw_driving_frames(dataset, model_type, model_name):
 if __name__ == "__main__":
     args = parse_arguments()
 
-    root_path = Path("/home/romet/data2/datasets/rally-estonia/dataset-cropped")
+    root_path = Path("/home/romet/data2/datasets/rally-estonia/end-to-end/rally-estonia-cropped")
     data_paths = [root_path / args.dataset_name]
     dataset = NvidiaDataset(data_paths, metadata_file="nvidia_frames_ext.csv")
 

@@ -9,7 +9,7 @@ import onnx
 import numpy as np
 
 
-from ibc import optimizers
+from ebm import optimizers
 from dataloading.nvidia import NvidiaValidationDataset
 from pilotnet import PilotnetEBM
 
@@ -63,7 +63,7 @@ def convert_pt_to_onnx(model_path, batch_size, output_path, with_choice, n_sampl
     return str(output_path)
 
 
-def get_loader(batch_size=1, dataset_path='/data/Bolt/dataset-cropped'):
+def get_loader(batch_size=1, dataset_path='/data/Bolt/end-to-end/rally-estonia-cropped'):
     num_workers = 2
 
     validset = NvidiaValidationDataset(Path(dataset_path), group_size=1)

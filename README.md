@@ -1,8 +1,14 @@
-# Rally Estonia End-to-End Driving
+# Energy-Based Models for End-to-End Driving (Rally Estonia)
 
-This repository contains framework to train end-to-end driving models using Rally Estonia dataset. Following papers can
-be reproduced using the framework:
- - [LiDAR-as-Camera for End-to-End Driving](./docs/lidar_as_camera.md) ([paper](https://drive.google.com/file/d/1S-YzcJccHsM0LTmpnaC91I5yWi1FQqPk/view))
+Train end-to-end driving models using Rally Estonia dataset.
+
+Only lateral control (steering wheel) is predicted, longitudinal control (throttle) is not predicted and must be controlled using other means.
+
+Implemented models:
+- standard regression (MAE)
+- energy-based regression ("implicit behavioral cloning")
+- discretized classification
+- Mixture Density Networks
 
 ## Dataset
 
@@ -12,16 +18,8 @@ Before training a model, dataset needs to be downloaded and prepared . See [_dat
 
 ### Following input modalities are supported:
 - Nvidia RGB cameras (only front wide camera used currently)
-- Ouster LiDAR range, ambient, intensity image
+
 ![camera_crop](./media/camera-crops.png "Camera crop")
-
-![camera_crop](./media/summer_lidar_crop.jpg "Summer lidar crop")
-
-### Following output modalities are supported:
-- Steering angle
-- Trajectory waypoints (longitudinal part fixed)
-
-Only lateral control (steering) is predicted, longitudinal control (throttle) is not predicted and must be controlled using other means.
 
 
 ## Training
@@ -52,11 +50,7 @@ Model can be trained using following command:
 python train.py --input-modality nvidia-camera --output-modality steering_angle --patience 10 --max-epochs 100 --model-name steering-angle --model-type pilotnet-conditional --wandb-project summer-models-6 --dataset-folder <path to extracted dataset>
 ```
 
-Use `--input-modality` parameter to train using camera or lidar images.
-
-Use `--output-modality` parameter to use different prediction targets like steering angle or trajectory waypoints.
-
-Use `--model-type` parameter to use different model architectures like `pilotnet-conditional` and `pilotnet-control`.
+Use `--model-type` parameter to use different model architectures like `pilotnet`, `pilotnet-ebm`, `pilotnet-classifier` and `pilotnet-mdn`.
 
 Use `--wandb-project` parameter to use log using W&B. To use without W&B, just omit this parameter. 
 

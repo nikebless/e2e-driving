@@ -20,4 +20,4 @@ BAGS=(
     )
 
 
-srun ./extract_rocket_small.sh ${BAGS[$SLURM_ARRAY_TASK_ID]}  /gpfs/space/projects/Bolt/dataset-cropped
+srun ./extract_rocket_small.sh ${BAGS[$SLURM_ARRAY_TASK_ID]}  /gpfs/space/projects/Bolt/end-to-end/rally-estonia-cropped
