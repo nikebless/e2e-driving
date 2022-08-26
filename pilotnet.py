@@ -57,11 +57,13 @@ class PilotnetEBM(nn.Module):
     https://implicitbc.github.io/
     """
 
-    def __init__(self, n_input_channels=3):
+    def __init__(self, bound: int):
         super().__init__()
 
+        self.bound = bound
+
         self.features = nn.Sequential(
-            nn.Conv2d(n_input_channels, 24, 5, stride=2),
+            nn.Conv2d(3, 24, 5, stride=2),
             nn.BatchNorm2d(24),
             nn.LeakyReLU(),
             nn.Conv2d(24, 36, 5, stride=2),
@@ -100,6 +102,7 @@ class PilotnetEBM(nn.Module):
         return next(self.parameters()).device
 
     def forward(self, x, y):
+        y /= self.bound # normalize y to [-1, 1]
         logging.debug(f'x: {x.shape} {x.dtype}')
         logging.debug(f'y: {y.shape} {y.dtype}')
         out = self.features(x)

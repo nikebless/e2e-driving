@@ -28,7 +28,7 @@ def convert_pt_to_onnx(model_path, model_type, output_path=None, config={}):
         ebm_constant_samples = config['ebm_constant_samples']
         
         inference_config = optimizers.DerivativeFreeConfig(
-            bounds=torch.tensor([[-steering_bound], [steering_bound]]),
+            bound=steering_bound,
             train_samples=0,
             inference_samples=n_samples,
             iters=n_dfo_iters,
@@ -88,7 +88,7 @@ def main(raw_args=None):
     parser.add_argument('--n-dfo-iters', default=0, type=int, help='Number of DFO iterations. Ignored if --with_dfo is not set.')
     parser.add_argument('--n-samples', default=128, type=int, help='Number of action samples in the discretization/as input to EBM.')
     parser.add_argument('--output', default=None, type=str, help='Path to the output ONNX model')
-    parser.add_argument('--steering-bound', default=4.5, type=float, help='Bounds for the steering angle, in radians. If not set, the model will use the default bounds.')
+    parser.add_argument('--steering-bound', default=4.5, type=float, help='Bound for the steering angle, in radians. If not set, the model will use the default bound.')
     parser.add_argument('--verbose', default=False, action='store_true', help='Print debug messages')
 
     args = parser.parse_args(raw_args)

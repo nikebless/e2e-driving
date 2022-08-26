@@ -25,7 +25,7 @@ class DerivativeFreeConfig:
     iters: int = 3
     train_samples: int = 256
     inference_samples: int = 2 ** 14
-    bounds: torch.Tensor = torch.tensor([[-4.5], [4.5]])
+    bound: float = 4.5
 
 
 class DFOptimizer(nn.Module):
@@ -40,7 +40,7 @@ class DFOptimizer(nn.Module):
         self.iters = config.iters
         self.train_samples = config.train_samples
         self.inference_samples = config.inference_samples
-        self.bounds = config.bounds
+        self.bound = config.bound
 
     def load_state_dict(self, state_dict: dict) -> None:
         state_dict = {'ebm.' + k: v for k,v in state_dict.items()}
@@ -48,11 +48,8 @@ class DFOptimizer(nn.Module):
 
     def _sample(self, num_samples: int) -> torch.Tensor:
         """Drawing samples from the uniform random distribution."""
-        bounds = self.bounds
-        lower = bounds[0, :]
-        upper = bounds[1, :]
-        size = (num_samples, bounds.shape[1])
-        samples = (lower - upper) * torch.rand(size, device=bounds.device) + upper
+        size = (num_samples, 1)
+        samples = (-2*self.bound) * torch.rand(size, device=self.ebm.device) + self.bound
         return samples
 
     def sample(self, batch_size: int) -> torch.Tensor:
@@ -61,7 +58,6 @@ class DFOptimizer(nn.Module):
 
     def to(self, device: torch.device) -> DFOptimizer:
         self.ebm.to(device)
-        self.bounds = self.bounds.to(device)
         return self
 
     @torch.no_grad()
@@ -69,7 +65,7 @@ class DFOptimizer(nn.Module):
         """Optimize for the best action given a trained EBM."""
         ebm = self.ebm
         noise_scale = self.noise_scale
-        bounds = self.bounds
+        bound = self.bound
 
         logging.debug(f'x: {x.shape}')
         samples = self._sample(x.size(0) * self.inference_samples)
@@ -88,14 +84,17 @@ class DFOptimizer(nn.Module):
 
             # Add noise and clip to target bounds.
             samples = samples + torch.randn_like(samples) * noise_scale
-            samples = samples.clamp(min=bounds[0, :], max=bounds[1, :])
+            samples = samples.clamp(min=-bound, max=bound)
 
             noise_scale *= self.noise_shrink
 
         # Return target with highest probability.
         energies = ebm(x, samples)
         best_idxs = energies.argmin(dim=-1)
-        return samples[torch.arange(samples.size(0)), best_idxs, :], energies
+
+        outs = samples[torch.arange(samples.size(0)), best_idxs, :]
+        outs *= bound # return to original bounds
+        return outs, energies
 
 
 class DFOptimizerConst(DFOptimizer):
@@ -107,11 +106,10 @@ class DFOptimizerConst(DFOptimizer):
         if self.inference_samples != self.train_samples:
             logging.warn('inference_samples is not equal to train_samples, which will likely cause poor performance when using constant samples')
 
-        lower_bound = self.bounds[0, 0]
-        upper_bound = self.bounds[1, 0]
+        bound = self.bound
 
-        self.negatives_train = torch.linspace(lower_bound, upper_bound, steps=self.train_samples, dtype=torch.float32).reshape(1, -1, 1)
-        self.negatives_eval = torch.linspace(lower_bound, upper_bound, steps=self.inference_samples, dtype=torch.float32).reshape(1, -1, 1)
+        self.negatives_train = torch.linspace(-bound, bound, steps=self.train_samples, dtype=torch.float32).reshape(1, -1, 1)
+        self.negatives_eval = torch.linspace(-bound, bound, steps=self.inference_samples, dtype=torch.float32).reshape(1, -1, 1)
 
     def sample(self, batch_size: int) -> torch.Tensor:
         return self.negatives_train.repeat(batch_size, 1, 1)

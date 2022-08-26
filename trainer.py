@@ -352,9 +352,9 @@ class EBMTrainer(Trainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.model = PilotnetEBM()
-        self.model.to(self.device)
         self.train_conf = kwargs['train_conf']
+        self.model = PilotnetEBM(self.train_conf.steering_bound)
+        self.model.to(self.device)
 
         optim_config, inference_config = self._initialize_config(self.train_conf)
 
@@ -386,9 +386,8 @@ class EBMTrainer(Trainer):
             weight_decay=train_conf.weight_decay,
         )
 
-        target_bounds = torch.tensor([[-train_conf.steering_bound], [train_conf.steering_bound]]).to(self.device)
         inference_config = optimizers.DerivativeFreeConfig(
-            bounds=target_bounds,
+            bound=train_conf.steering_bound,
             train_samples=train_conf.ebm_train_samples,
             inference_samples=train_conf.ebm_inference_samples,
             iters=train_conf.ebm_dfo_iters,
@@ -577,16 +576,14 @@ class ClassificationTrainer(Trainer):
 
         self.temporal_regularization_criterion = self.temporal_regularization_options[self.train_conf.temporal_regularization_type]
         self.steps = 0
-        self.target_bounds = torch.tensor([[-self.train_conf.steering_bound], [self.train_conf.steering_bound]]).to(self.device)
 
         # action space discretization
         self.discretizer = self.make_discretizer(self.train_conf)
 
     def make_discretizer(self, train_conf):
-        lower_bound = self.target_bounds[0, 0]
-        upper_bound = self.target_bounds[1, 0]
+        bound = train_conf.steering_bound
         n_samples = train_conf.ebm_train_samples
-        self.target_bins = torch.linspace(lower_bound, upper_bound, steps=n_samples, dtype=torch.float32)
+        self.target_bins = torch.linspace(-bound, bound, steps=n_samples, dtype=torch.float32)
         
         X = np.expand_dims(self.target_bins, 1)
         y = np.arange(self.target_bins.shape[0])
