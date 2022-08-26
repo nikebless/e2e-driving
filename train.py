@@ -46,6 +46,12 @@ def parse_arguments():
     )
 
     argparser.add_argument(
+        '--wandb-entity',
+        required=False,
+        help='W&B entity (user) name to use for metrics. Necessary only if you own multiple W&B entities and want to use a specific one.'
+    )
+
+    argparser.add_argument(
         '--wandb-project',
         required=False,
         help='W&B project name to use for metrics. Wandb logging is disabled when no project name is provided.'
@@ -266,6 +272,7 @@ class TrainingConfig:
         self.temporal_group_size = args.temporal_group_size
         self.temporal_regularization = args.temporal_regularization
         self.temporal_regularization_type = args.temporal_regularization_type
+        self.wandb_entity = args.wandb_entity
         self.wandb_project = args.wandb_project
         self.weight_decay = args.weight_decay
 
@@ -290,7 +297,7 @@ def train_model(model_name, train_conf):
         if "falcon" in socket.gethostname():
             args['settings'] = wandb.Settings(start_method='fork')
 
-        wandb.init(project=train_conf.wandb_project, config=train_conf, **args)
+        wandb.init(project=train_conf.wandb_project, entity=train_conf.wandb_entity, config=train_conf, **args)
     print('train_conf: ', train_conf.__dict__)
 
     train_loader, valid_loader = load_data(train_conf)

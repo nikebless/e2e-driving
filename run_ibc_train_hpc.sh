@@ -27,7 +27,8 @@ srun python -u train.py \
     --dataset-folder /gpfs/space/projects/Bolt/end-to-end/rally-estonia-cropped \
     --batch-size 512 \
     --num-workers 16 \
-    --wandb-project ebm-e2e \
+    --wandb-entity nikebless \
+    --wandb-project ebm-driving \
     --ebm-train-samples 512 \
     --ebm-inference-samples 512 \
     --temporal-regularization 0 \
