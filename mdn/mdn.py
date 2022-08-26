@@ -4,14 +4,17 @@ For more info on MDNs, see _Mixture Desity Networks_ by Bishop, 1994.
 """
 import torch
 import torch.nn as nn
-from torch.distributions import Categorical
 import math
 import torch.nn.functional as F
 
 
 ONEOVERSQRT2PI = 1.0 / math.sqrt(2 * math.pi)
+LOG2PI = math.log(2 * math.pi)
 
 
+# adapted from:
+# - https://github.com/sagelywizard/pytorch-mdn/blob/master/mdn/mdn.py
+# - https://deep-and-shallow.com/2021/03/20/mixture-density-networks-probabilistic-regression-for-uncertainty-estimation/#implementation-tricks-to-ensure-stability
 class MDN(nn.Module):
     """A mixture density network layer
 
@@ -40,25 +43,20 @@ class MDN(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         self.num_gaussians = num_gaussians
-        self.pi = nn.Sequential(
-            nn.Linear(in_features, num_gaussians),
-            nn.Softmax(dim=1)
-        )
+        self.pi = nn.Linear(in_features, num_gaussians) 
         self.sigma = nn.Linear(in_features, out_features * num_gaussians)
-        self.mu = nn.Linear(in_features, out_features * num_gaussians)
+        self.mu = nn.Linear(in_features, out_features * num_gaussians) # TODO: try initializaing the bias to left/straight/right turns
 
-    def forward(self, minibatch):
-        pi = self.pi(minibatch)
-        # advice from here: https://towardsdatascience.com/a-hitchhikers-guide-to-mixture-density-networks-76b435826cca
-        # added after the loss blew up to infinity once.
-        sigma = F.elu(self.sigma(minibatch)) + 1 
+    def forward(self, x):
+        pi = self.pi(x)
+        sigma = F.elu(self.sigma(x)) + 1 + 1e-15
         sigma = sigma.view(-1, self.num_gaussians, self.out_features)
-        mu = self.mu(minibatch)
+        mu = self.mu(x)
         mu = mu.view(-1, self.num_gaussians, self.out_features)
         return pi, sigma, mu
 
 
-def gaussian_probability(sigma, mu, target):
+def gaussian_probability(sigma, mu, target, log=False):
     """Returns the probability of `target` given MoG parameters `sigma` and `mu`.
 
     Arguments:
@@ -75,31 +73,40 @@ def gaussian_probability(sigma, mu, target):
             of the distribution in the corresponding sigma/mu index.
     """
     target = target.unsqueeze(1).expand_as(sigma)
-    ret = ONEOVERSQRT2PI * torch.exp(-0.5 * ((target - mu) / sigma)**2) / sigma
-    return torch.prod(ret, 2)
+    if log:
+        ret = (
+            -torch.log(sigma)
+            -0.5 * LOG2PI
+            -0.5 * ((target - mu) / sigma) ** 2
+        )
+    else: 
+        ret = (ONEOVERSQRT2PI / sigma) * torch.exp(
+            -0.5 * ((target - mu) / sigma) ** 2
+        )
+    return ret.squeeze()
 
 
 def mdn_loss(pi, sigma, mu, target):
-    """Calculates the error, given the MoG parameters and the target
-
-    The loss is the negative log likelihood of the data given the MoG
-    parameters.
+    """Calculates the error, given the MoG parameters and the target.
     """
-    prob = pi * gaussian_probability(sigma, mu, target)
-    nll = -torch.log(torch.sum(prob, dim=1))
-    return torch.mean(nll)
+    log_component_prob = gaussian_probability(sigma, mu, target, log=True)
+    log_mix_prob = torch.log(
+        F.gumbel_softmax(pi, tau=1, dim=-1) + 1e-15 # sharper distribution
+    )
+    log_sum_prob = torch.logsumexp(log_component_prob + log_mix_prob, dim=1)
+    return -torch.mean(log_sum_prob)
 
 
-def sample(pi, sigma, mu):
-    """Draw samples from a MoG.
+def sample(pi, sigma, mu, return_variances=False):
+    """Draw samples from a MoG. 
+    Don't sample, just pick the mean of the most likely one, following the MDN paper (1994).
     """
     # Choose which gaussian we'll sample from
-    pis = Categorical(pi).sample().view(pi.size(0), 1, 1)
-    # Choose a random sample, one randn for batch X output dims
-    # Do a (output dims)X(batch size) tensor here, so the broadcast works in
-    # the next step, but we have to transpose back.
-    gaussian_noise = torch.randn(
-        (sigma.size(2), sigma.size(0)), requires_grad=False, device=sigma.device)
-    variance_samples = sigma.gather(1, pis).detach().squeeze()
-    mean_samples = mu.detach().gather(1, pis).squeeze()
-    return (gaussian_noise * variance_samples + mean_samples).transpose(0, 1)
+    best_gaussian_idx = pi.argmax(dim=1).view(pi.size(0), 1, 1)
+
+    variance_samples = sigma.gather(1, best_gaussian_idx).detach().squeeze() # B[xO]
+    mean_samples = mu.detach().gather(1, best_gaussian_idx).squeeze() # B[xO]
+
+    if return_variances:
+        return mean_samples, variance_samples
+    return mean_samples
