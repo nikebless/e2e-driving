@@ -539,28 +539,20 @@ class EBMTrainer(Trainer):
         return avg_mae, result, avg_temp_reg_loss, avg_entropy
 
     def save_onnx(self, _, __):
+        model_type = self.train_conf.model_type
+        config = {
+            'steering_bound': self.train_conf.steering_bound,
+            'n_samples': self.train_conf.ebm_inference_samples,
+            'n_dfo_iters': self.train_conf.ebm_dfo_iters,
+            'ebm_constant_samples': self.train_conf.ebm_constant_samples,
+        }
+
         pt_models = [f'{self.save_dir}/last.pt', f'{self.save_dir}/best.pt']
 
         for pt_model_path in pt_models:
-
-            pure_model_args = ['--file', pt_model_path, '--output', pt_model_path.replace('.pt', '-pure.onnx'),
-                               '--samples', str(self.inference_model.inference_samples), '--bs', '32',
-                               '--steering-bound', str(self.inference_model.bounds.max().item())]
-
-            dfo_model_args = ['--file', pt_model_path, '--output', pt_model_path.replace('.pt', '-dfo.onnx'),
-                              '--with-dfo', '--iters', str(self.inference_model.iters),
-                              '--samples', str(self.inference_model.inference_samples), '--bs', '1',
-                               '--steering-bound', str(self.inference_model.bounds.max().item())]
-
-            if self.train_conf.ebm_constant_samples:
-                dfo_model_args.append('--ebm-constant-samples')
-            
-            pure_model_path = convert_pt_to_onnx(pure_model_args)
-            dfo_model_path = convert_pt_to_onnx(dfo_model_args)
-
+            model_path = convert_pt_to_onnx(pt_model_path, model_type, config=config)
             if self.wandb_logging:
-                wandb.save(pure_model_path)
-                wandb.save(dfo_model_path)
+                wandb.save(model_path)
 
 
 class ClassificationTrainer(Trainer):
@@ -721,6 +713,16 @@ class ClassificationTrainer(Trainer):
         avg_entropy = epoch_entropy / len(iterator)
         result = np.array(all_predictions)
         return avg_mae, result, avg_temp_reg_loss, avg_entropy
+
+    def save_onnx(self, _, __):
+        model_type = self.train_conf.model_type
+        config = { 'steering_bound': self.train_conf.steering_bound }
+        pt_models = [f'{self.save_dir}/last.pt', f'{self.save_dir}/best.pt']
+
+        for pt_model_path in pt_models:
+            model_path = convert_pt_to_onnx(pt_model_path, model_type, config=config)
+            if self.wandb_logging:
+                wandb.save(model_path)
 
 
 class MDNTrainer(Trainer):

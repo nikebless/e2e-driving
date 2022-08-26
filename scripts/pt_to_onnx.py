@@ -6,49 +6,56 @@ import argparse
 
 import torch
 import onnx
-import numpy as np
-
 
 from ebm import optimizers
 from dataloading.nvidia import NvidiaValidationDataset
-from pilotnet import PilotnetEBM
+from pilotnet import PilotnetEBM, PilotnetClassifier
+from classifier.infer import ClassifierInferrer
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def convert_pt_to_onnx(model_path, batch_size, output_path, with_choice, n_samples, iters, args):
-    data_loader = get_loader(batch_size=batch_size)
+def convert_pt_to_onnx(model_path, model_type, output_path=None, config={}):
 
-    model = PilotnetEBM()
-    if with_choice:
+    steering_bound = config['steering_bound']
+
+    inference_config = None
+    inference_wrapper = None
+
+    if model_type == 'pilotnet-ebm':
+        n_samples = config['n_samples']
+        n_dfo_iters = config['n_dfo_iters']
+        ebm_constant_samples = config['ebm_constant_samples']
+        
         inference_config = optimizers.DerivativeFreeConfig(
-            bounds=torch.tensor([[-args['steering_bound']], [args['steering_bound']]]),
+            bounds=torch.tensor([[-steering_bound], [steering_bound]]),
             train_samples=0,
             inference_samples=n_samples,
-            iters=iters,
+            iters=n_dfo_iters,
         )
-        inference_wrapper = optimizers.DFOptimizerConst if args['ebm_constant_samples'] else optimizers.DFOptimizer
+        inference_wrapper = optimizers.DFOptimizerConst if ebm_constant_samples else optimizers.DFOptimizer
+        model = PilotnetEBM()
         model = inference_wrapper(model, inference_config)
+    elif model_type == 'pilotnet-classifier':
+        weights = torch.load(model_path, map_location=torch.device('cpu'))
+        for _, weight in weights.items(): pass # access output layer weights
+        output_layer_size = weight.shape[0]
+        model = PilotnetClassifier(output_layer_size)
+        model = ClassifierInferrer(model, steering_bound, output_layer_size)
+    else:
+        raise ValueError(f'Unknown model type: {model_type}')
 
     model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
     model.to(device)
+    model.eval()
 
+    data_loader = get_loader(batch_size=1)
     inputs, _, _ = iter(data_loader).next()
-
     frames = inputs['image'].to(device)
     sample_inputs = [frames]
-
     input_names = ['x']
-    
     dynamic_axes = None
-
-    if not with_choice:
-        random_actions = torch.tensor(np.random.uniform(-args['steering_bound'], args['steering_bound'], size=(batch_size, n_samples, 1)), device=device, dtype=torch.float32)
-        sample_inputs.append(random_actions)
-        input_names.append('y')
-
     output_path = Path(model_path).with_suffix('.onnx') if output_path is None else output_path
-
     sample_inputs.append({}) # onnx export magic
 
     torch.onnx.export(model, 
@@ -75,23 +82,23 @@ def get_loader(batch_size=1, dataset_path='/data/Bolt/end-to-end/rally-estonia-c
 
 def main(raw_args=None):
     parser = argparse.ArgumentParser()
+    parser.add_argument('--ebm-constant-samples', default=False, action='store_true', help='Use constant samples instead of random samples for EBM.')
     parser.add_argument('--file', type=str, help='Path to the PyTorch model')
-    parser.add_argument('--output', type=str, help='Path to the output ONNX model')
-    parser.add_argument('--with-choice', default=False, action='store_true', help='Choose the steering angle in the ONNX graph. If false, simply output energies for input actions.')
-    parser.add_argument('--samples', default=1024, type=int, help='Number of action samples.')
-    parser.add_argument('--iters', default=3, type=int, help='Number of DFO iterations. Ignored if --with_dfo is not set.')
-    parser.add_argument('--bs', default=1, type=int, help='Batch size. Necessary when --with_choice is NOT set, inference will only be available with this batch size.')
-    parser.add_argument('--verbose', default=False, action='store_true', help='Print debug messages')
+    parser.add_argument('--model-type', type=str, help='Type of the model.', choices=['pilotnet-ebm', 'pilotnet-classifier'])
+    parser.add_argument('--n-dfo-iters', default=0, type=int, help='Number of DFO iterations. Ignored if --with_dfo is not set.')
+    parser.add_argument('--n-samples', default=128, type=int, help='Number of action samples in the discretization/as input to EBM.')
+    parser.add_argument('--output', default=None, type=str, help='Path to the output ONNX model')
     parser.add_argument('--steering-bound', default=4.5, type=float, help='Bounds for the steering angle, in radians. If not set, the model will use the default bounds.')
-    parser.add_argument('--use-constant-samples', default=False, action='store_true', help='Use constant samples instead of random samples.')
+    parser.add_argument('--verbose', default=False, action='store_true', help='Print debug messages')
 
     args = parser.parse_args(raw_args)
 
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
 
-    output_path = convert_pt_to_onnx(args.file, args.bs, args.output, args.with_choice, args.samples, args.iters, vars(args))
+   
 
+    output_path = convert_pt_to_onnx(args.file, args.model_type, args.output, vars(args))
     print(f'Successfuly converted to ONNX: {output_path}')
 
 
