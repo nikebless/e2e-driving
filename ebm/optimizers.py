@@ -93,7 +93,6 @@ class DFOptimizer(nn.Module):
         best_idxs = energies.argmin(dim=-1)
 
         outs = samples[torch.arange(samples.size(0)), best_idxs, :]
-        outs *= bound # return to original bounds
         return outs, energies
 
 
