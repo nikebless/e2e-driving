@@ -220,6 +220,6 @@ class PilotnetMDN(nn.Module):
         if self.scale and not self.training:
             # undo normalization to [0, 1] in eval mode
             scale = self.scale
-            sigma *= sigma * (2*scale) - scale
-            mu *= mu * (2*scale) - scale
+            sigma = sigma * (2*scale) - scale
+            mu = mu * (2*scale) - scale
         return pi, sigma, mu
