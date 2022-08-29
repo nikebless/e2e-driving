@@ -727,7 +727,7 @@ class MDNTrainer(Trainer):
         super().__init__(*args, **kwargs)
 
         self.train_conf = kwargs['train_conf']
-        self.model = PilotnetMDN(self.train_conf.mdn_n_components)
+        self.model = PilotnetMDN(self.train_conf.mdn_n_components, scale=self.train_conf.steering_bound if self.train_conf.normalize_target else None)
         self.model.to(self.device)
 
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.train_conf.learning_rate, betas=(0.9, 0.999),
@@ -753,6 +753,10 @@ class MDNTrainer(Trainer):
         return np.array(all_predictions)
 
     def train_batch(self, _, input, target, __, ___):
+        scale = self.train_conf.steering_bound
+        if self.train_conf.normalize_target:
+            target = (target + scale) / (2 * scale) # normalize target to roughly [0, 1]
+
         inputs = input['image'].to(self.device)
         target = target.to(self.device, torch.float32)
 

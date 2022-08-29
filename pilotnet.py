@@ -176,9 +176,10 @@ class PilotnetMDN(nn.Module):
     The rest transformed from a regressor into a discretized classification model.
     """
 
-    def __init__(self, n_gaussians=3):
+    def __init__(self, n_gaussians=3, scale=None):
         super().__init__()
 
+        self.scale = scale
         self.n_gaussians = n_gaussians
 
         self.features = nn.Sequential(
@@ -214,5 +215,11 @@ class PilotnetMDN(nn.Module):
 
     def forward(self, x):
         x = self.features(x)
-        x = self.regressor(x)
-        return x
+        pi, sigma, mu = self.regressor(x)
+
+        if self.scale and not self.training:
+            # undo normalization to [0, 1] in eval mode
+            scale = self.scale
+            sigma *= sigma * (2*scale) - scale
+            mu *= mu * (2*scale) - scale
+        return pi, sigma, mu

@@ -231,6 +231,14 @@ def parse_arguments():
     )
 
     argparser.add_argument(
+        '--normalize-targets',
+        required=False,
+        default=False,
+        action='store_true',
+        help='Normalize target steering angle to [0, 1]. In eval mode, the model will scale back to original values. Applies to regression models.'
+    )
+
+    argparser.add_argument(
         '--debug',
         action='store_true',
         help='When true, debug mode is enabled.'
@@ -266,6 +274,7 @@ class TrainingConfig:
         self.max_epochs = args.max_epochs
         self.mdn_n_components = args.mdn_n_components
         self.model_type = args.model_type
+        self.normalize_targets = args.normalize_targets
         self.num_workers = args.num_workers
         self.patience = args.patience
         self.steering_bound = args.steering_bound
