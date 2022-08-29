@@ -64,7 +64,7 @@ class PilotnetEBM(nn.Module):
     https://implicitbc.github.io/
     """
 
-    def __init__(self, bound: int):
+    def __init__(self, bound: int = None):
         super().__init__()
 
         self.bound = bound
@@ -109,7 +109,8 @@ class PilotnetEBM(nn.Module):
         return next(self.parameters()).device
 
     def forward(self, x, y):
-        y = (y + self.bound) / (2 * self.bound) # normalize y to [0, 1]
+        if self.bound is not None:
+            y = (y + self.bound) / (2 * self.bound) # normalize y to [0, 1]
         logging.debug(f'x: {x.shape} {x.dtype}')
         logging.debug(f'y: {y.shape} {y.dtype}')
         out = self.features(x)

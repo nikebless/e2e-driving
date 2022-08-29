@@ -24,8 +24,9 @@ def convert_pt_to_onnx(model_path, model_type, output_path=None, config={}):
 
     if model_type == 'pilotnet-ebm':
         n_samples = config['n_samples']
-        n_dfo_iters = config['n_dfo_iters']
-        ebm_constant_samples = config['ebm_constant_samples']
+        n_dfo_iters = config.get('ebm_dfo_iters', 0)
+        ebm_constant_samples = config.get('ebm_constant_samples', True)
+        normalize_inputs = config.get('normalize_inputs', True)
         
         inference_config = optimizers.DerivativeFreeConfig(
             bound=steering_bound,
@@ -34,7 +35,7 @@ def convert_pt_to_onnx(model_path, model_type, output_path=None, config={}):
             iters=n_dfo_iters,
         )
         inference_wrapper = optimizers.DFOptimizerConst if ebm_constant_samples else optimizers.DFOptimizer
-        model = PilotnetEBM()
+        model = PilotnetEBM(bound=steering_bound if normalize_inputs else None)
         model = inference_wrapper(model, inference_config)
     elif model_type == 'pilotnet-classifier':
         weights = torch.load(model_path, map_location=torch.device('cpu'))
@@ -82,10 +83,10 @@ def get_loader(batch_size=1, dataset_path='/data/Bolt/end-to-end/rally-estonia-c
 
 def main(raw_args=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--ebm-constant-samples', default=False, action='store_true', help='Use constant samples instead of random samples for EBM.')
+    parser.add_argument('--ebm-constant-samples', default=True, action='store_true', help='Use constant samples instead of random samples for EBM.')
     parser.add_argument('--file', type=str, help='Path to the PyTorch model')
     parser.add_argument('--model-type', type=str, help='Type of the model.', choices=['pilotnet-ebm', 'pilotnet-classifier'])
-    parser.add_argument('--n-dfo-iters', default=0, type=int, help='Number of DFO iterations. Ignored if --with_dfo is not set.')
+    parser.add_argument('--ebm-dfo-iters', default=0, type=int, help='Number of DFO iterations. Ignored if --with_dfo is not set.')
     parser.add_argument('--n-samples', default=128, type=int, help='Number of action samples in the discretization/as input to EBM.')
     parser.add_argument('--output', default=None, type=str, help='Path to the output ONNX model')
     parser.add_argument('--steering-bound', default=4.5, type=float, help='Bound for the steering angle, in radians. If not set, the model will use the default bound.')
