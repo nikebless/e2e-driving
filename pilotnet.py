@@ -11,11 +11,13 @@ class PilotNet(nn.Module):
     Conditonal control is concatenated with input features to each policy branchy
     """
 
-    def __init__(self, n_input_channels=3):
+    def __init__(self, scale=None):
         super(PilotNet, self).__init__()
 
+        self.scale = scale
+
         self.features = nn.Sequential(
-            nn.Conv2d(n_input_channels, 24, 5, stride=2),
+            nn.Conv2d(3, 24, 5, stride=2),
             nn.BatchNorm2d(24),
             nn.LeakyReLU(),
             nn.Conv2d(24, 36, 5, stride=2),
@@ -47,8 +49,13 @@ class PilotNet(nn.Module):
 
     def forward(self, x):
         x = self.features(x)
-        x = self.regressor(x)
-        return x
+        outs = self.regressor(x)
+
+        if self.scale and not self.training:
+            # undo normalization to [0, 1] in eval mode
+            scale = self.scale
+            outs = outs * (2*scale) - scale
+        return outs
 
 
 class PilotnetEBM(nn.Module):

@@ -308,11 +308,11 @@ class PilotNetTrainer(Trainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        train_conf = kwargs['train_conf']
+        self.train_conf = kwargs['train_conf']
 
-        self.model = PilotNet(train_conf.n_input_channels)
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=train_conf.learning_rate, betas=(0.9, 0.999),
-                                           eps=1e-08, weight_decay=train_conf.weight_decay, amsgrad=False)
+        self.model = PilotNet(scale=self.train_conf.steering_bound if self.train_conf.normalize_targets else None)
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.train_conf.learning_rate, betas=(0.9, 0.999),
+                                           eps=1e-08, weight_decay=self.train_conf.weight_decay, amsgrad=False)
         self.model = self.model.to(self.device)
         self.criterion = self.criterion.to(self.device)
 
@@ -333,6 +333,9 @@ class PilotNetTrainer(Trainer):
 
     def train_batch(self, model, data, target_values, condition_mask, criterion):
         inputs = data['image'].to(self.device)
+        if self.train_conf.normalize_targets:
+            scale = self.train_conf.steering_bound
+            target_values = (target_values + scale) / 2 * scale # normalize target to roughly [0, 1]
         target_values = target_values.to(self.device)
         predictions = model(inputs)
         return predictions, criterion(predictions, target_values)
@@ -753,8 +756,8 @@ class MDNTrainer(Trainer):
         return np.array(all_predictions)
 
     def train_batch(self, _, input, target, __, ___):
-        scale = self.train_conf.steering_bound
         if self.train_conf.normalize_targets:
+            scale = self.train_conf.steering_bound
             target = (target + scale) / (2 * scale) # normalize target to roughly [0, 1]
 
         inputs = input['image'].to(self.device)

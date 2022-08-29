@@ -9,8 +9,8 @@ nohup python train.py \
     --patience 10 \
     --max-epochs 100 \
     --model-name steering-angle \
-    --model-type pilotnet-mdn \
-    --loss ce \
+    --model-type pilotnet \
+    --loss mae \
     --dataset-folder /data/Bolt/end-to-end/rally-estonia-cropped \
     --batch-size 512 \
     --num-workers 16 \
