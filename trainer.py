@@ -335,7 +335,7 @@ class PilotNetTrainer(Trainer):
         inputs = data['image'].to(self.device)
         if self.train_conf.normalize_targets:
             scale = self.train_conf.steering_bound
-            target_values = (target_values + scale) / 2 * scale # normalize target to roughly [0, 1]
+            target_values = (target_values + scale) / (2 * scale) # normalize target to roughly [0, 1]
         target_values = target_values.to(self.device)
         predictions = model(inputs)
         return predictions, criterion(predictions, target_values)
