@@ -11,10 +11,8 @@ class PilotNet(nn.Module):
     Conditonal control is concatenated with input features to each policy branchy
     """
 
-    def __init__(self, scale=None):
+    def __init__(self):
         super(PilotNet, self).__init__()
-
-        self.scale = scale
 
         self.features = nn.Sequential(
             nn.Conv2d(3, 24, 5, stride=2),
@@ -50,11 +48,6 @@ class PilotNet(nn.Module):
     def forward(self, x):
         x = self.features(x)
         outs = self.regressor(x)
-
-        if self.scale and not self.training:
-            # undo normalization to [0, 1] in eval mode
-            scale = self.scale
-            outs = outs * (2*scale) - scale
         return outs
 
 
@@ -64,10 +57,8 @@ class PilotnetEBM(nn.Module):
     https://implicitbc.github.io/
     """
 
-    def __init__(self, bound: int = None):
+    def __init__(self):
         super().__init__()
-
-        self.bound = bound
 
         self.features = nn.Sequential(
             nn.Conv2d(3, 24, 5, stride=2),
@@ -109,8 +100,6 @@ class PilotnetEBM(nn.Module):
         return next(self.parameters()).device
 
     def forward(self, x, y):
-        if self.bound is not None:
-            y = (y + self.bound) / (2 * self.bound) # normalize y to [0, 1]
         logging.debug(f'x: {x.shape} {x.dtype}')
         logging.debug(f'y: {y.shape} {y.dtype}')
         out = self.features(x)
@@ -184,10 +173,9 @@ class PilotnetMDN(nn.Module):
     The rest transformed from a regressor into a discretized classification model.
     """
 
-    def __init__(self, n_gaussians=3, scale=None):
+    def __init__(self, n_gaussians=3):
         super().__init__()
 
-        self.scale = scale
         self.n_gaussians = n_gaussians
 
         self.features = nn.Sequential(
@@ -223,11 +211,5 @@ class PilotnetMDN(nn.Module):
 
     def forward(self, x):
         x = self.features(x)
-        pi, sigma, mu = self.regressor(x)
-
-        if self.scale and not self.training:
-            # undo normalization to [0, 1] in eval mode
-            scale = self.scale
-            sigma = sigma * (2*scale) - scale
-            mu = mu * (2*scale) - scale
-        return pi, sigma, mu
+        outs = self.regressor(x)
+        return outs

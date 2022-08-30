@@ -310,7 +310,7 @@ class PilotNetTrainer(Trainer):
 
         self.train_conf = kwargs['train_conf']
 
-        self.model = PilotNet(scale=self.train_conf.steering_bound if self.train_conf.normalize_targets else None)
+        self.model = PilotNet()
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.train_conf.learning_rate, betas=(0.9, 0.999),
                                            eps=1e-08, weight_decay=self.train_conf.weight_decay, amsgrad=False)
         self.model = self.model.to(self.device)
@@ -333,12 +333,18 @@ class PilotNetTrainer(Trainer):
 
     def train_batch(self, model, data, target_values, condition_mask, criterion):
         inputs = data['image'].to(self.device)
-        if self.train_conf.normalize_targets:
-            scale = self.train_conf.steering_bound
-            target_values = (target_values + scale) / (2 * scale) # normalize target to roughly [0, 1]
         target_values = target_values.to(self.device)
         predictions = model(inputs)
         return predictions, criterion(predictions, target_values)
+
+    def save_onnx(self, _, __):
+        model_type = self.train_conf.model_type
+        pt_models = [f'{self.save_dir}/last.pt', f'{self.save_dir}/best.pt']
+
+        for pt_model_path in pt_models:
+            model_path = convert_pt_to_onnx(pt_model_path, model_type)
+            if self.wandb_logging:
+                wandb.save(model_path)
 
 
 class EBMTrainer(Trainer):
@@ -356,7 +362,7 @@ class EBMTrainer(Trainer):
         super().__init__(*args, **kwargs)
 
         self.train_conf = kwargs['train_conf']
-        self.model = PilotnetEBM(self.train_conf.steering_bound)
+        self.model = PilotnetEBM()
         self.model.to(self.device)
 
         optim_config, inference_config = self._initialize_config(self.train_conf)
@@ -730,7 +736,7 @@ class MDNTrainer(Trainer):
         super().__init__(*args, **kwargs)
 
         self.train_conf = kwargs['train_conf']
-        self.model = PilotnetMDN(self.train_conf.mdn_n_components, scale=self.train_conf.steering_bound if self.train_conf.normalize_targets else None)
+        self.model = PilotnetMDN(self.train_conf.mdn_n_components)
         self.model.to(self.device)
 
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.train_conf.learning_rate, betas=(0.9, 0.999),
@@ -756,10 +762,6 @@ class MDNTrainer(Trainer):
         return np.array(all_predictions)
 
     def train_batch(self, _, input, target, __, ___):
-        if self.train_conf.normalize_targets:
-            scale = self.train_conf.steering_bound
-            target = (target + scale) / (2 * scale) # normalize target to roughly [0, 1]
-
         inputs = input['image'].to(self.device)
         target = target.to(self.device, torch.float32)
 
@@ -821,3 +823,16 @@ class MDNTrainer(Trainer):
         avg_mae = epoch_mae / len(iterator)
         result = np.array(all_predictions)
         return avg_mae, result
+
+    def save_onnx(self, _, __):
+        model_type = self.train_conf.model_type
+        pt_models = [f'{self.save_dir}/last.pt', f'{self.save_dir}/best.pt']
+
+        config = {
+            'n_gaussians': self.train_conf.mdn_n_components,
+        }
+
+        for pt_model_path in pt_models:
+            model_path = convert_pt_to_onnx(pt_model_path, model_type, config=config)
+            if self.wandb_logging:
+                wandb.save(model_path)

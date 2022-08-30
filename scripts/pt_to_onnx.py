@@ -9,8 +9,9 @@ import onnx
 
 from ebm import optimizers
 from dataloading.nvidia import NvidiaValidationDataset
-from pilotnet import PilotnetEBM, PilotnetClassifier
+from pilotnet import PilotNet, PilotnetEBM, PilotnetClassifier, PilotnetMDN
 from classifier.infer import ClassifierInferrer
+from mdn.infer import MDNInferrer
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -22,11 +23,12 @@ def convert_pt_to_onnx(model_path, model_type, output_path=None, config={}):
     inference_config = None
     inference_wrapper = None
 
-    if model_type == 'pilotnet-ebm':
+    if model_type == 'pilotnet':
+        model = PilotNet()
+    elif model_type == 'pilotnet-ebm':
         n_samples = config['n_samples']
         n_dfo_iters = config.get('ebm_dfo_iters', 0)
         ebm_constant_samples = config.get('ebm_constant_samples', True)
-        normalize_inputs = config.get('normalize_inputs', True)
         
         inference_config = optimizers.DerivativeFreeConfig(
             bound=steering_bound,
@@ -35,7 +37,7 @@ def convert_pt_to_onnx(model_path, model_type, output_path=None, config={}):
             iters=n_dfo_iters,
         )
         inference_wrapper = optimizers.DFOptimizerConst if ebm_constant_samples else optimizers.DFOptimizer
-        model = PilotnetEBM(bound=steering_bound if normalize_inputs else None)
+        model = PilotnetEBM()
         model = inference_wrapper(model, inference_config)
     elif model_type == 'pilotnet-classifier':
         weights = torch.load(model_path, map_location=torch.device('cpu'))
@@ -43,6 +45,10 @@ def convert_pt_to_onnx(model_path, model_type, output_path=None, config={}):
         output_layer_size = weight.shape[0]
         model = PilotnetClassifier(output_layer_size)
         model = ClassifierInferrer(model, steering_bound, output_layer_size)
+    elif model_type == 'pilotnet-mdn':
+        n_gaussians = config['n_gaussians']
+        model = PilotnetMDN(n_gaussians=n_gaussians)
+        model = MDNInferrer(model)
     else:
         raise ValueError(f'Unknown model type: {model_type}')
 
@@ -87,6 +93,7 @@ def main(raw_args=None):
     parser.add_argument('--file', type=str, help='Path to the PyTorch model')
     parser.add_argument('--model-type', type=str, help='Type of the model.', choices=['pilotnet-ebm', 'pilotnet-classifier'])
     parser.add_argument('--ebm-dfo-iters', default=0, type=int, help='Number of DFO iterations. Ignored if --with_dfo is not set.')
+    parser.add_argument('--n-gaussians', default=3, type=int, help='Number of gaussians for an MDN.')
     parser.add_argument('--n-samples', default=128, type=int, help='Number of action samples in the discretization/as input to EBM.')
     parser.add_argument('--output', default=None, type=str, help='Path to the output ONNX model')
     parser.add_argument('--steering-bound', default=4.5, type=float, help='Bound for the steering angle, in radians. If not set, the model will use the default bound.')
