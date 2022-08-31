@@ -86,14 +86,21 @@ def gaussian_probability(sigma, mu, target, log=False):
     return ret.squeeze()
 
 
-def mdn_loss(pi, sigma, mu, target):
-    """Calculates the error, given the MoG parameters and the target.
+def mdn_logprob(pi, sigma, mu, target):
+    """Calculates the MoG log probability of a 1D target.
     """
     log_component_prob = gaussian_probability(sigma, mu, target, log=True)
     log_mix_prob = torch.log(
         F.gumbel_softmax(pi, tau=1, dim=-1) + 1e-15 # sharper distribution
     )
     log_sum_prob = torch.logsumexp(log_component_prob + log_mix_prob, dim=1)
+    return log_sum_prob
+
+
+def mdn_loss(pi, sigma, mu, target):
+    """Calculates the error, given the MoG parameters and the target.
+    """
+    log_sum_prob = mdn_logprob(pi, sigma, mu, target)
     return -torch.mean(log_sum_prob)
 
 

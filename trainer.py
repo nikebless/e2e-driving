@@ -18,11 +18,13 @@ from tqdm.auto import tqdm
 import wandb
 import time
 import logging
+from copy import deepcopy
+import matplotlib.pyplot as plt
 
 from metrics.metrics import calculate_open_loop_metrics
 
 from ebm import optimizers
-from mdn.mdn import sample as mdn_sample, mdn_loss
+from mdn.mdn import sample as mdn_sample, mdn_loss, mdn_logprob
 from pilotnet import PilotNet, PilotnetEBM, PilotnetClassifier, PilotnetMDN
 from scripts.pt_to_onnx import convert_pt_to_onnx
 
@@ -44,6 +46,28 @@ def earth_mover_distance(input: Tensor, target: Tensor, square=False) -> Tensor:
     diff_handler = torch.square if square else torch.abs
 
     return diff_handler(torch.cumsum(input, dim=-1) - torch.cumsum(target, dim=-1)).sum() / input.size(0)
+
+def get_closest(array, values):
+    '''Get indices of the closest values in `array` to `values`.
+    Adapted from: https://stackoverflow.com/a/46184652/7948839
+    
+    Arguments:
+        array (torch.Tensor): Array of values. Must be sorted.
+        values (torch.Tensor): Values to find the closest indices for.
+    
+    Returns:
+        indices (torch.Tensor): Indices of the closest values in `array`.
+    '''
+    # get insert positions
+    idxs = torch.searchsorted(array, values, side="left")
+    
+    # find indexes where previous index is closer
+    max_term = torch.maximum(idxs-1, torch.tensor([0]).repeat(len(idxs)))
+    min_term = torch.minimum(idxs, torch.tensor([len(array)-1]).repeat(len(idxs)))
+    prev_idx_is_less = ((idxs == len(array))|(torch.abs(values - array[max_term]) < torch.abs(values - array[min_term])))
+    idxs[prev_idx_is_less] -= 1
+    
+    return idxs
 
 
 class KLDivLossWithSoftmax(KLDivLoss):
@@ -820,9 +844,98 @@ class MDNTrainer(Trainer):
 
             ask_batch_timestamp = time.time()
 
+        eval_landscape_img = self.plot_2d_evaluation_landscape(iterator, epoch)
+        if self.wandb_logging:
+            wandb.log({'mdn_landscape_elva_intersection': eval_landscape_img}, commit=False)
+
         avg_mae = epoch_mae / len(iterator)
         result = np.array(all_predictions)
         return avg_mae, result
+
+    def plot_2d_evaluation_landscape(self, iterator, epoch):
+
+        # 1. Get detailed predictions on an intersection within the Elva track
+        dataset = iterator.dataset
+        elva_frames = dataset.frames[dataset.frames['image_path'].str.contains('elva')]
+        start_idx = 550 * 30
+        end_idx = 555 * 30
+        area_of_interest = elva_frames.iloc[start_idx:end_idx]
+
+        area_of_interest_loader = deepcopy(iterator)
+        area_of_interest_loader.dataset.frames = area_of_interest
+
+        pi_history = []
+        sigma_history = []
+        mu_history = []
+        preds_history = []
+        targets_history = []
+
+        for input, target, _ in area_of_interest_loader:
+            inputs = input['image'].to(self.device)
+            target = target.to(self.device, torch.float32)
+
+            pi, sigma, mu = self.model(inputs)
+            preds = mdn_sample(pi, sigma, mu)
+
+            pi_history.append(pi.cpu().squeeze())
+            sigma_history.append(sigma.cpu().squeeze())
+            mu_history.append(mu.cpu().squeeze())
+            preds_history.append(preds.cpu().squeeze())
+            targets_history.append(target.cpu().squeeze())
+
+        pi_history = torch.vstack(pi_history)
+        sigma_history = torch.vstack(sigma_history)
+        mu_history = torch.vstack(mu_history)
+        preds_history = torch.cat(preds_history)
+        targets_history = torch.cat(targets_history)
+
+        logging.debug(f'pi_history.shape: {pi_history.shape}')
+        logging.debug(f'sigma_history.shape: {sigma_history.shape}')
+        logging.debug(f'mu_history.shape: {mu_history.shape}')
+        logging.debug(f'preds_history.shape: {preds_history.shape}')
+        logging.debug(f'targets_history.shape: {targets_history.shape}')
+
+        # 2. Plot the full mixture distribution
+        n_samples = 1024
+        bound = self.train_conf.steering_bound
+
+        pis_repeated = torch.repeat_interleave(pi_history, n_samples, dim=0)
+        sigmas_repeated = torch.repeat_interleave(sigma_history, n_samples, dim=0)
+        mus_repeated = torch.repeat_interleave(mu_history, n_samples, dim=0)
+        steering_1d_grid = torch.linspace(-bound, bound, n_samples)
+        steering_1d_grid_repeated = steering_1d_grid.repeat(pi.shape[0], 1).reshape(-1)
+        logging.debug(f'pis_repeated.shape: {pis_repeated.shape}')
+        logging.debug(f'sigmas_repeated.shape: {sigmas_repeated.shape}')
+        logging.debug(f'mus_repeated.shape: {mus_repeated.shape}')
+        logging.debug(f'steering_1d_grid.shape: {steering_1d_grid.shape}')
+        logging.debug(f'steering_1d_grid_repeated.shape: {steering_1d_grid_repeated.shape}')
+
+        logprob_grid = mdn_logprob(pis_repeated, sigmas_repeated, mus_repeated, steering_1d_grid_repeated).reshape(-1, n_samples)
+        prob_grid = torch.exp(logprob_grid)
+        inverted_prob_grid = 1.0 - prob_grid
+        targets_history_x = get_closest(steering_1d_grid, targets_history)
+        preds_history_x = get_closest(steering_1d_grid, preds_history)
+        logging.debug(f'prob_grid.shape: {prob_grid.shape}')
+        logging.debug(f'targets_history_x.shape: {targets_history_x.shape}')
+        logging.debug(f'preds_history_x.shape: {preds_history_x.shape}')
+
+        fig = plt.figure(figsize=(10,10))
+        plt.imshow(inverted_prob_grid, aspect=6.85, cmap='terrain')
+        plt.xticks(np.linspace(0, n_samples, 16), np.linspace(-bound, bound, 16).round(2))
+        plt.plot(targets_history_x, torch.arange(0, pi_history.shape[0]), color='purple', linestyle='--', label='Human driver')
+        plt.plot(preds_history_x, torch.arange(0, pi_history.shape[0]), color='red', linestyle='--', label='Max-likelihood prediction')
+        plt.title('Elva track intersection - MoG')
+        plt.xlabel('Steering angle (radians)')
+        plt.ylabel('Frame # (@ 30 hz)')
+        plt.gca().invert_xaxis()
+        plt.gca().invert_yaxis()
+        plt.colorbar(fraction=0.046, pad=0.04)
+        plt.legend()
+        if self.train_conf.debug:
+            plt.savefig(f'prob_grid_{epoch}.png')
+        wandb_img = wandb.Image(fig)
+        plt.close('all')
+        return wandb_img
 
     def save_onnx(self, _, __):
         model_type = self.train_conf.model_type
