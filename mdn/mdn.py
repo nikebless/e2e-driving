@@ -87,12 +87,19 @@ def gaussian_probability(sigma, mu, target, log=False):
 
 
 def mdn_logprob(pi, sigma, mu, target):
-    """Calculates the MoG log probability of a 1D target.
+    """Calculates the MoG log probability of the target in a numerically stable way.
+
+    Arguments:
+        pi (BxG): The mixture weights. B is the batch size, G is the number of Gaussians.
+        sigma (BxGxO): The standard deviation of the Gaussians. B is the batch,
+            G is the number of Gaussians, and O is the number of dimensions per Gaussian.
+        mu (BxGxO): The means of the Gaussians. B is the batch size, G is the
+            number of Gaussians, and O is the number of dimensions per Gaussian.
+        target (BxI): A batch of target. B is the batch size and I is the number of
+            input dimensions.
     """
     log_component_prob = gaussian_probability(sigma, mu, target, log=True)
-    log_mix_prob = torch.log(
-        F.gumbel_softmax(pi, tau=1, dim=-1) + 1e-15 # sharper distribution
-    )
+    log_mix_prob = torch.log(F.softmax(pi, dim=-1) + 1e-15)
     log_sum_prob = torch.logsumexp(log_component_prob + log_mix_prob, dim=1)
     return log_sum_prob
 
