@@ -26,6 +26,7 @@ from metrics.metrics import calculate_open_loop_metrics
 from ebm import optimizers
 from mdn.mdn import sample as mdn_sample, mdn_loss, mdn_logprob
 from pilotnet import PilotNet, PilotnetEBM, PilotnetClassifier, PilotnetMDN
+from dataloading.nvidia import NvidiaElvaDataset
 from scripts.pt_to_onnx import convert_pt_to_onnx
 
 import train
@@ -844,7 +845,7 @@ class MDNTrainer(Trainer):
 
             ask_batch_timestamp = time.time()
 
-        eval_landscape_img = self.plot_2d_evaluation_landscape(iterator, epoch)
+        eval_landscape_img = self.plot_2d_evaluation_landscape(epoch)
         if self.wandb_logging:
             wandb.log({'mdn_landscape_elva_intersection': eval_landscape_img}, commit=False)
 
@@ -852,17 +853,16 @@ class MDNTrainer(Trainer):
         result = np.array(all_predictions)
         return avg_mae, result
 
-    def plot_2d_evaluation_landscape(self, iterator, epoch):
+    def plot_2d_evaluation_landscape(self, epoch):
 
         # 1. Get detailed predictions on an intersection within the Elva track
-        dataset = iterator.dataset
-        elva_frames = dataset.frames[dataset.frames['image_path'].str.contains('elva')]
         start_idx = 550 * 30
         end_idx = 555 * 30
-        area_of_interest = elva_frames.iloc[start_idx:end_idx]
 
-        area_of_interest_loader = deepcopy(iterator)
-        area_of_interest_loader.dataset.frames = area_of_interest
+        elva_dataset = NvidiaElvaDataset(Path(self.train_conf.dataset_folder))
+        elva_dataset.frames = elva_dataset.frames.iloc[start_idx:end_idx]
+        area_of_interest_loader = torch.utils.data.DataLoader(elva_dataset, batch_size=self.train_conf.batch_size, 
+                        num_workers=self.train_conf.num_workers, shuffle=False, pin_memory=True, persistent_workers=False)
 
         pi_history = []
         sigma_history = []

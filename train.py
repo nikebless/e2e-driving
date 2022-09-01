@@ -353,7 +353,7 @@ def load_data(train_conf):
 
     valid_loader = torch.utils.data.DataLoader(validset, batch_size=train_conf.batch_size, shuffle=False,
                                                num_workers=train_conf.num_workers, pin_memory=True,
-                                               persistent_workers=True, collate_fn=trainset.collate_fn)
+                                               persistent_workers=False, collate_fn=trainset.collate_fn)
 
     return train_loader, valid_loader
 

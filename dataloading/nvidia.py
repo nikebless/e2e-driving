@@ -383,3 +383,15 @@ class NvidiaValidationDataset(NvidiaDatasetGrouped):
 
         tr = transforms.Compose([Normalize()])
         super().__init__(valid_paths, tr, camera=camera, **kwargs)
+
+
+class NvidiaElvaDataset(NvidiaDatasetGrouped):
+    # todo: remove default parameters
+    def __init__(self, root_path, camera="front_wide", **kwargs):
+        valid_paths = [
+            root_path / "2021-10-26-10-49-06_e2e_rec_ss20_elva",
+            root_path / "2021-10-26-11-08-59_e2e_rec_ss20_elva_back",
+        ]
+
+        tr = transforms.Compose([Normalize()])
+        super().__init__(valid_paths, tr, camera=camera, **kwargs)
