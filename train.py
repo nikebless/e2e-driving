@@ -327,7 +327,7 @@ def load_data(train_conf):
     group_size = train_conf.temporal_group_size
 
     dataset_path = Path(train_conf.dataset_folder)
-    trainset = NvidiaTrainDataset(dataset_path, camera=train_conf.camera_name, group_size=group_size, dataset_proportion=train_conf.dataset_proportion)
+    trainset = NvidiaTrainDataset(dataset_path, group_size=group_size, dataset_proportion=train_conf.dataset_proportion)
     validset = NvidiaValidationDataset(dataset_path, group_size=group_size)
 
     print(f"Training data has {len(trainset.frames)} frames")

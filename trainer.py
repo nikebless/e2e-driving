@@ -859,7 +859,7 @@ class MDNTrainer(Trainer):
         start_idx = 550 * 30
         end_idx = 555 * 30
 
-        elva_dataset = NvidiaElvaDataset(Path(self.train_conf.dataset_folder))
+        elva_dataset = NvidiaElvaDataset(Path(self.train_conf.dataset_folder), group_size=self.train_conf.temporal_group_size)
         elva_dataset.frames = elva_dataset.frames.iloc[start_idx:end_idx]
         area_of_interest_loader = torch.utils.data.DataLoader(elva_dataset, batch_size=self.train_conf.batch_size, 
                         num_workers=self.train_conf.num_workers, shuffle=False, pin_memory=True, persistent_workers=False)
