@@ -18,8 +18,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def convert_pt_to_onnx(model_path, model_type, output_path=None, config={}):
 
-    steering_bound = config['steering_bound']
-
     inference_config = None
     inference_wrapper = None
 
@@ -29,10 +27,11 @@ def convert_pt_to_onnx(model_path, model_type, output_path=None, config={}):
         n_samples = config['n_samples']
         n_dfo_iters = config.get('ebm_dfo_iters', 0)
         ebm_constant_samples = config.get('ebm_constant_samples', True)
+        steering_bound = config['steering_bound']
         
         inference_config = optimizers.DerivativeFreeConfig(
             bound=steering_bound,
-            train_samples=0,
+            train_samples=n_samples,
             inference_samples=n_samples,
             iters=n_dfo_iters,
         )
@@ -40,6 +39,7 @@ def convert_pt_to_onnx(model_path, model_type, output_path=None, config={}):
         model = PilotnetEBM()
         model = inference_wrapper(model, inference_config)
     elif model_type == 'pilotnet-classifier':
+        steering_bound = config['steering_bound']
         weights = torch.load(model_path, map_location=torch.device('cpu'))
         for _, weight in weights.items(): pass # access output layer weights
         output_layer_size = weight.shape[0]
