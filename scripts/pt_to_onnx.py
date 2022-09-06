@@ -7,17 +7,15 @@ import argparse
 import torch
 import onnx
 
-from ebm import optimizers
 from dataloading.nvidia import NvidiaValidationDataset
+from ebm import optimizers
 from pilotnet import PilotNet, PilotnetEBM, PilotnetClassifier, PilotnetMDN
 from classifier.infer import ClassifierInferrer
 from mdn.infer import MDNInferrer
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
-def convert_pt_to_onnx(model_path, model_type, output_path=None, config={}):
-
+def initialize_model(model_path, model_type, device, config={}):
     inference_config = None
     inference_wrapper = None
 
@@ -55,7 +53,10 @@ def convert_pt_to_onnx(model_path, model_type, output_path=None, config={}):
     model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
     model.to(device)
     model.eval()
+    return model
 
+def convert_pt_to_onnx(model_path, model_type, output_path=None, config={}):
+    model = initialize_model(model_path, model_type, device, config)
     data_loader = get_loader(batch_size=1)
     inputs, _, _ = iter(data_loader).next()
     frames = inputs['image'].to(device)

@@ -10,5 +10,7 @@ __pycache__
 /experiments/
 /runs/
 /temp/
+/tmp/
 slurm*
 **/front_wide/*.png
+.env
