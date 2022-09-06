@@ -25,33 +25,12 @@ LOG_FREQUENCY_SEC = 1
 FPS = 13
 WANDB_ENTITY = os.environ['WANDB_ENTITY']
 WANDB_PROJECT = os.environ['WANDB_PROJECT']
+TRACES_ROOT = os.path.join(BOLT_DIR, 'end-to-end', 'vista')
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-trace_root = os.path.join(BOLT_DIR, 'end-to-end', 'vista')
-trace_path = [
-    "2022-08-31-15-37-37_elva_ebm_512_front",
-]
-trace_path = [os.path.join(trace_root, p) for p in trace_path]
-
-world = vista.World(trace_path, trace_config={'road_width': 4})
-car = world.spawn_agent(
-    config={
-        'length': LEXUS_LENGTH,
-        'width': LEXUS_WIDTH,
-        'wheel_base': LEXUS_WHEEL_BASE,
-        'steering_ratio': LEXUS_STEERING_RATIO,
-        'lookahead_road': False
-    })
-camera = car.spawn_camera(config={'name': 'camera_front', 'size': (FULL_IMAGE_HEIGHT, FULL_IMAGE_WIDTH)})
-display = vista.Display(world, display_config={"gui_scale": 2, "vis_full_frame": True })
-
-def vista_reset():
-    world.reset()
-    display.reset()
-
-def vista_step(curvature=None, speed=None):
+def vista_step(car, curvature=None, speed=None):
     if curvature is None: 
         curvature = car.trace.f_curvature(car.timestamp)
     if speed is None: 
@@ -91,17 +70,18 @@ def preprocess(full_obs):
     img = normalise( img )
     return img
 
-def grab_and_preprocess_obs(car):
+def grab_and_preprocess_obs(car, camera):
     full_obs = car.observations[camera.name]
     obs = preprocess(full_obs)
     return obs
 
-def run_episode(model, save_video=False):
+def run_episode(model, world, camera, car, save_video=False):
     stream = VideoStream(FPS)
     i_step = 0
 
-    vista_reset()
-    observation = grab_and_preprocess_obs(car)
+    world.reset()
+    display.reset()
+    observation = grab_and_preprocess_obs(car, camera)
 
     while True:
 
@@ -115,10 +95,10 @@ def run_episode(model, save_video=False):
         curvature = steering2curvature(math.degrees(steering_angle), LEXUS_WHEEL_BASE, LEXUS_STEERING_RATIO)
 
         step_start = time.perf_counter()
-        vista_step(curvature)
+        vista_step(car, curvature)
         step_time = time.perf_counter() - step_start
 
-        observation = grab_and_preprocess_obs(car)
+        observation = grab_and_preprocess_obs(car, camera)
 
         vis_start = time.perf_counter()
         if save_video:
@@ -148,19 +128,42 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, required=True, help='Path to ONNX model.')
-    parser.add_argument('--use-wandb', action='store_true', help='Use Weights and Biases for logging.')
+    parser.add_argument('--no-wandb', action='store_true', default=False, help='Do not use Weights and Biases for logging.')
+    parser.add_argument('--save-video', action='store_true', default=False, help='Save video of model run.')
     args = parser.parse_args()
 
     config = {
         'model_path': args.model,
     }
-    if args.use_wandb:
+    if not args.no_wandb:
         wandb.init(project=WANDB_PROJECT, entity=WANDB_ENTITY, config=config, job_type='vista-evaluation')
 
-    model = OnnxModel(args.model)
+    print(vars(args))
 
-    steps_completed = run_episode(model)
+    trace_paths = [
+        "2022-08-31-15-37-37_elva_ebm_512_front",
+    ]
+    trace_paths = [os.path.join(TRACES_ROOT, p) for p in trace_paths]
 
-    if args.use_wandb:
+    total_steps_completed = 0
+
+    for trace in trace_paths:
+        world = vista.World([trace], trace_config={'road_width': 4})
+        car = world.spawn_agent(
+            config={
+                'length': LEXUS_LENGTH,
+                'width': LEXUS_WIDTH,
+                'wheel_base': LEXUS_WHEEL_BASE,
+                'steering_ratio': LEXUS_STEERING_RATIO,
+                'lookahead_road': False
+            })
+        camera = car.spawn_camera(config={'name': 'camera_front', 'size': (FULL_IMAGE_HEIGHT, FULL_IMAGE_WIDTH)})
+        display = vista.Display(world, display_config={"gui_scale": 2, "vis_full_frame": True })
+        model = OnnxModel(args.model)
+        steps_completed = run_episode(model, world, camera, car, save_video=args.save_video)
+        total_steps_completed += steps_completed
+
+    if not args.no_wandb:
         wandb.log({'steps_completed': steps_completed})
-        wandb.finish()
+
+    wandb.finish()
