@@ -41,6 +41,6 @@ if __name__ == '__main__':
     current_dir = os.path.dirname(os.path.abspath(__file__))
     path_to_file = os.path.join(current_dir, 'vista_evaluate.py')
     args = " ".join(map(shlex.quote, sys.argv[1:]))
-    cmd = f"{gpu_selection_str} python {path_to_file} {args}"
+    cmd = f"{gpu_selection_str} python -u {path_to_file} {args}"
 
     subprocess.call(cmd, shell=True)

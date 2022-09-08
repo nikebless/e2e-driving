@@ -25,6 +25,8 @@ FPS = 13
 WANDB_ENTITY = os.environ['WANDB_ENTITY']
 WANDB_PROJECT = os.environ['WANDB_PROJECT']
 TRACES_ROOT = os.path.join(BOLT_DIR, 'end-to-end', 'vista')
+FRAME_START_OFFSET = 100
+ROAD_WIDTH = 3.5
 
 
 def vista_step(car, curvature=None, speed=None):
@@ -42,7 +44,7 @@ def check_out_of_lane(car):
     half_road_width = road_width / 2
     return distance_from_center > half_road_width
 
-def is_done_or_crashed(car): 
+def is_crashed(car): 
     return check_out_of_lane(car) or car.done
 
 def resize(img):
@@ -77,8 +79,12 @@ def run_episode(model, world, camera, car, save_video=False):
     i_step = 0
 
     world.reset()
+    car.reset(0, 0, FRAME_START_OFFSET)
     display.reset()
     observation = grab_and_preprocess_obs(car, camera)
+
+    last_driven_frame_idx = 0
+    crash_count = 0
 
     while True:
 
@@ -86,7 +92,7 @@ def run_episode(model, world, camera, car, save_video=False):
         model_input = np.moveaxis(observation, -1, 0).astype(np.float32)
         model_input = np.expand_dims(model_input, axis=0)
         predictions = model.predict(model_input)
-        steering_angle = predictions[0]
+        steering_angle = predictions.item()
         inference_time = time.perf_counter() - inference_start
 
         curvature = steering2curvature(math.degrees(steering_angle), LEXUS_WHEEL_BASE, LEXUS_STEERING_RATIO)
@@ -107,19 +113,28 @@ def run_episode(model, world, camera, car, save_video=False):
 
         i_step += 1
         if i_step % (FPS * LOG_FREQUENCY_SEC) == 0:
-            print(f'Step {i_step} ({i_step / FPS:.0f}s) - Still going...')
+            print(f'Step {i_step} ({i_step / FPS:.0f}s) - Crashes so far: {crash_count}')
 
-        if is_done_or_crashed(car):
-            print(f'Crashed or Done at step {i_step} ({i_step / FPS:.0f}s)!')
+        if check_out_of_lane(car):
+            restart_at_frame = last_driven_frame_idx
+            print(f'Crashed at step {i_step} (frame={last_driven_frame_idx}) ({i_step / FPS:.0f}s). Re-engaging at frame {restart_at_frame}!')
+            crash_count += 1
+            car.reset(0, 0, restart_at_frame)
+            display.reset()
+            observation = grab_and_preprocess_obs(car, camera)
+        if car.done:
+            print(f'Finished at step {i_step} ({i_step / FPS:.0f}s).')
             break
+        else:
+            last_driven_frame_idx = car.frame_index
 
     if save_video:
         print("Saving trajectory...")
         stream.save(f"model_run.avi")
 
-    print(f'\nReached {i_step} steps ({i_step / FPS:.0f}s)!')
+    print(f'\nCrashes: {crash_count}')
 
-    return i_step
+    return crash_count
 
 if __name__ == '__main__':
 
@@ -131,23 +146,26 @@ if __name__ == '__main__':
 
     model = OnnxModel(args.model) # start this early to aquire GPU
 
-    config = {
-        'model_path': args.model,
-    }
-    if not args.no_wandb:
-        wandb.init(project=WANDB_PROJECT, entity=WANDB_ENTITY, config=config, job_type='vista-evaluation')
-
     print(vars(args))
 
     trace_paths = [
         "2022-08-31-15-37-37_elva_ebm_512_front",
+        # "2022-06-10-13-23-01_e2e_elva_forward_4_3_km_section",
+        # "2022-06-10-13-03-20_e2e_elva_backward_4_3_km_section",
     ]
-    trace_paths = [os.path.join(TRACES_ROOT, p) for p in trace_paths]
 
-    total_steps_completed = 0
+    if not args.no_wandb:
+        config = {
+            'model_path': args.model,
+            'trace_paths': trace_paths,
+        }
+        wandb.init(project=WANDB_PROJECT, entity=WANDB_ENTITY, config=config, job_type='vista-evaluation')
+
+    trace_paths = [os.path.join(TRACES_ROOT, p) for p in trace_paths]
+    total_n_crashes = 0
 
     for trace in trace_paths:
-        world = vista.World([trace], trace_config={'road_width': 4})
+        world = vista.World([trace], trace_config={'road_width': ROAD_WIDTH})
         car = world.spawn_agent(
             config={
                 'length': LEXUS_LENGTH,
@@ -158,10 +176,10 @@ if __name__ == '__main__':
             })
         camera = car.spawn_camera(config={'name': 'camera_front', 'size': (FULL_IMAGE_HEIGHT, FULL_IMAGE_WIDTH)})
         display = vista.Display(world, display_config={"gui_scale": 2, "vis_full_frame": True })
-        steps_completed = run_episode(model, world, camera, car, save_video=args.save_video)
-        total_steps_completed += steps_completed
+        n_crashes = run_episode(model, world, camera, car, save_video=args.save_video)
+        total_n_crashes += n_crashes
 
     if not args.no_wandb:
-        wandb.log({'steps_completed': steps_completed})
+        wandb.log({'crash_count': total_n_crashes})
 
     wandb.finish()
