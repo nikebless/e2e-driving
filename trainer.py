@@ -845,9 +845,9 @@ class MDNTrainer(Trainer):
 
             ask_batch_timestamp = time.time()
 
-        eval_landscape_img = self.plot_2d_evaluation_landscape(epoch)
-        if self.wandb_logging:
-            wandb.log({'mdn_landscape_elva_intersection': eval_landscape_img}, commit=False)
+        # eval_landscape_img = self.plot_2d_evaluation_landscape(epoch)
+        # if self.wandb_logging:
+        #     wandb.log({'mdn_landscape_elva_intersection': eval_landscape_img}, commit=False)
 
         avg_mae = epoch_mae / len(iterator)
         result = np.array(all_predictions)
