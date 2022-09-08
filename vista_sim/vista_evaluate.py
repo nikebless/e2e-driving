@@ -4,7 +4,6 @@ os.environ['PYOPENGL_PLATFORM'] = 'egl'
 import time
 import numpy as np
 import cv2
-import torch
 import math
 import argparse
 import wandb
@@ -27,8 +26,6 @@ WANDB_ENTITY = os.environ['WANDB_ENTITY']
 WANDB_PROJECT = os.environ['WANDB_PROJECT']
 TRACES_ROOT = os.path.join(BOLT_DIR, 'end-to-end', 'vista')
 
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def vista_step(car, curvature=None, speed=None):
     if curvature is None: 
@@ -132,6 +129,8 @@ if __name__ == '__main__':
     parser.add_argument('--save-video', action='store_true', default=False, help='Save video of model run.')
     args = parser.parse_args()
 
+    model = OnnxModel(args.model) # start this early to aquire GPU
+
     config = {
         'model_path': args.model,
     }
@@ -159,7 +158,6 @@ if __name__ == '__main__':
             })
         camera = car.spawn_camera(config={'name': 'camera_front', 'size': (FULL_IMAGE_HEIGHT, FULL_IMAGE_WIDTH)})
         display = vista.Display(world, display_config={"gui_scale": 2, "vis_full_frame": True })
-        model = OnnxModel(args.model)
         steps_completed = run_episode(model, world, camera, car, save_video=args.save_video)
         total_steps_completed += steps_completed
 
