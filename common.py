@@ -18,13 +18,14 @@ IMAGE_CROP_XMAX = 1620
 IMAGE_CROP_YMIN = 520
 IMAGE_CROP_YMAX = 864
 
-CUDA_EXECUTION_PROVIDER = ('CUDAExecutionProvider', {
-        'device_id': 0,
-})
-
 class OnnxModel:
     def __init__(self, path_to_onnx_model):
-        self.session = ort.InferenceSession(path_to_onnx_model, providers=[CUDA_EXECUTION_PROVIDER, 'CPUExecutionProvider'])
+        # these options are necessary only for HPC, not sure why:
+        # https://github.com/microsoft/onnxruntime/issues/8313#issuecomment-876092511
+        options = ort.SessionOptions()
+        options.intra_op_num_threads = 1
+        options.inter_op_num_threads = 1
+        self.session = ort.InferenceSession(path_to_onnx_model, options, providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
         self.input_name = self.session.get_inputs()[0].name
 
     def predict(self, input_frame):
