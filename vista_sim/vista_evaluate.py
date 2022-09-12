@@ -1,3 +1,4 @@
+from collections import defaultdict
 import os
 os.environ['PYOPENGL_PLATFORM'] = 'egl'
 
@@ -74,7 +75,7 @@ def grab_and_preprocess_obs(car, camera):
     obs = preprocess(full_obs)
     return obs
 
-def run_episode(model, world, camera, car, save_video=False):
+def run_episode(model, world, camera, car, save_video=False, video_name='model_run.avi'):
     stream = VideoStream(FPS)
     i_step = 0
 
@@ -129,8 +130,8 @@ def run_episode(model, world, camera, car, save_video=False):
             last_driven_frame_idx = car.frame_index
 
     if save_video:
-        print("Saving trajectory...")
-        stream.save(f"model_run.avi")
+        print('Saving trajectory to', video_name)
+        stream.save(video_name)
 
     print(f'\nCrashes: {crash_count}')
 
@@ -144,14 +145,16 @@ if __name__ == '__main__':
     parser.add_argument('--save-video', action='store_true', default=False, help='Save video of model run.')
     args = parser.parse_args()
 
-    model = OnnxModel(args.model) # start this early to aquire GPU
+    model = OnnxModel(args.model) # aquire GPU early (helpful for distributing runs across GPUs on a single machine)
 
     print(vars(args))
 
+    # human-driven traces on the same track in different weather conditions
     trace_paths = [
-        "2022-08-31-15-37-37_elva_ebm_512_front",
-        # "2022-06-10-13-23-01_e2e_elva_forward_4_3_km_section",
-        # "2022-06-10-13-03-20_e2e_elva_backward_4_3_km_section",
+        ['2022-06-10-13-23-01_e2e_elva_forward_4_3_km_section', 'sunny'], 
+        ['2022-06-10-13-03-20_e2e_elva_backward_4_3_km_section', 'sunny'],
+        ['2021-10-26-10-49-06_e2e_rec_ss20_elva_eval_chunk', 'cloudy'],
+        ['2021-10-26-11-08-59_e2e_rec_ss20_elva_back_eval_chunk', 'cloudy'],
     ]
 
     if not args.no_wandb:
@@ -161,10 +164,16 @@ if __name__ == '__main__':
         }
         wandb.init(project=WANDB_PROJECT, entity=WANDB_ENTITY, config=config, job_type='vista-evaluation')
 
-    trace_paths = [os.path.join(TRACES_ROOT, p) for p in trace_paths]
+    trace_paths = [(os.path.join(TRACES_ROOT, track_path), condition) for track_path, condition in trace_paths]
     total_n_crashes = 0
+    crashes_by_trace = defaultdict(int)
+    crashes_by_condition = defaultdict(int)
 
-    for trace in trace_paths:
+    timestamp = int(time.time())
+
+    for trace, track_condition in trace_paths:
+        output_video_name = f'{timestamp}_{os.path.basename(trace)}.avi'
+
         world = vista.World([trace], trace_config={'road_width': ROAD_WIDTH})
         car = world.spawn_agent(
             config={
@@ -175,11 +184,23 @@ if __name__ == '__main__':
                 'lookahead_road': False
             })
         camera = car.spawn_camera(config={'name': 'camera_front', 'size': (FULL_IMAGE_HEIGHT, FULL_IMAGE_WIDTH)})
-        display = vista.Display(world, display_config={"gui_scale": 2, "vis_full_frame": True })
-        n_crashes = run_episode(model, world, camera, car, save_video=args.save_video)
-        total_n_crashes += n_crashes
+        display = vista.Display(world, display_config={'gui_scale': 2, 'vis_full_frame': True })
+
+        n_crashes = run_episode(model, world, camera, car, save_video=args.save_video, trace=output_video_name)
+        crashes_by_trace[trace] = n_crashes
+        crashes_by_condition[track_condition] += n_crashes
+
+    total_crashes = sum(crashes_by_trace.values())
+
+    print(f'\nCrashes by trace:')
+    for trace, n_crashes in crashes_by_trace.items():
+        print(f'{trace}: {n_crashes}')
+
+    print(f'\nCrashes by condition:')
+    for condition, n_crashes in crashes_by_condition.items():
+        print(f'{condition}: {n_crashes}')
 
     if not args.no_wandb:
-        wandb.log({'crash_count': total_n_crashes})
+        wandb.log({'crash_count': total_crashes})
 
     wandb.finish()
