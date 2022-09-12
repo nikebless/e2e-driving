@@ -187,7 +187,7 @@ if __name__ == '__main__':
         camera = car.spawn_camera(config={'name': 'camera_front', 'size': (FULL_IMAGE_HEIGHT, FULL_IMAGE_WIDTH)})
         display = vista.Display(world, display_config={'gui_scale': 2, 'vis_full_frame': True })
 
-        n_crashes = run_episode(model, world, camera, car, save_video=args.save_video, trace=output_video_name)
+        n_crashes = run_episode(model, world, camera, car, save_video=args.save_video, video_name=output_video_name)
         crashes_by_trace[trace] = n_crashes
         crashes_by_condition[track_condition] += n_crashes
 
