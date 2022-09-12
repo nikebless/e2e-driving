@@ -83,12 +83,12 @@ class NvidiaDriveImporter:
         self.scaled_width = int(self.resize_scale * width)
         self.scaled_height = int(self.resize_scale * height)
 
-    def import_bags(self):
+    def import_bags(self, force=False):
         for bag_file in self.bag_files:
             print(f"Importing bag {bag_file}")
-            self.import_bag(bag_file, self.image_type)
+            self.import_bag(bag_file, self.image_type, force=force)
 
-    def import_bag(self, bag_file, image_type):
+    def import_bag(self, bag_file, image_type, force=False):
         bag = rosbag.Bag(bag_file, "r")
         bridge = CvBridge()
 
@@ -98,8 +98,16 @@ class NvidiaDriveImporter:
             root_folder = Path(self.extract_dir) / bag_path.stem
         else:  # extract to same directory where bag is
             root_folder = Path(bag_path.parent) / bag_path.stem
-        # shutil.rmtree(root_folder, ignore_errors=True)
-        root_folder.mkdir(parents=True, exist_ok=True)
+
+        if root_folder.exists() and not force:
+            print(f"Skipping {root_folder} as it already exists")
+            return
+        elif root_folder.exists() and force:
+            print(f"Overwriting {root_folder}")
+            shutil.rmtree(root_folder, ignore_errors=True)
+        else:
+            print(f"Creating {root_folder}")
+            root_folder.mkdir(parents=True, exist_ok=True)
 
         for camera_topic in self.nvidia_topics:
             camera_name = self.topic_to_camera_name_map[camera_topic]
@@ -373,6 +381,12 @@ if __name__ == "__main__":
                         help="Camera image crop vertical maximum position."
                         )
 
+    parser.add_argument("--force",
+                        default=False,
+                        action='store_true',
+                        help='Force extraction even if output directory exists.',
+    )
+
     args = parser.parse_args()
 
     bags = [
@@ -384,4 +398,4 @@ if __name__ == "__main__":
                                    args.camera_crop_ymin, args.camera_crop_ymax,
                                    args.resize_scale,
                                    args.extract_side_cameras, args.extract_lidar, args.image_type)
-    importer.import_bags()
+    importer.import_bags(args.force)
