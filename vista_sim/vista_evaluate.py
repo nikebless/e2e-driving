@@ -9,6 +9,7 @@ import cv2
 import math
 import argparse
 import wandb
+import traceback
 import dotenv
 dotenv.load_dotenv()
 
@@ -24,11 +25,23 @@ from vista_sim.video import VideoStream
 
 LOG_FREQUENCY_SEC = 1
 FPS = 13
-WANDB_ENTITY = os.environ['WANDB_ENTITY']
-WANDB_PROJECT = os.environ['WANDB_PROJECT']
+WANDB_ENTITY = os.environ.get('WANDB_ENTITY', None)
+WANDB_PROJECT = os.environ.get('WANDB_PROJECT', None)
 TRACES_ROOT = os.path.join(BOLT_DIR, 'end-to-end', 'vista')
 FRAME_START_OFFSET = 100
 ROAD_WIDTH = 3.5
+MAX_OPENGL_RETRIES = int(os.environ.get('MAX_OPENGL_RETRIES', 10))
+
+
+def step_sensors_safe(car):
+    successful = False
+    try: 
+        car.step_sensors()
+        successful = True
+    except Exception as err:
+        print(err)
+        traceback.print_exc()
+    return successful
 
 
 def vista_step(car, curvature=None, speed=None):
@@ -38,7 +51,12 @@ def vista_step(car, curvature=None, speed=None):
         speed = car.trace.f_speed(car.timestamp)
     
     car.step_dynamics(action=np.array([curvature, speed]), dt=1/FPS)
-    car.step_sensors()
+    n_attempts = 0
+    while not step_sensors_safe(car) or n_attempts > MAX_OPENGL_RETRIES:
+        n_attempts += 1
+        print(f'Waiting 5 sec before another step_sensors() attempt... (tried {n_attempts}/{MAX_OPENGL_RETRIES} times)')
+        time.sleep(5)
+
 
 def check_out_of_lane(car):
     distance_from_center = np.abs(car.relative_state.x)
@@ -152,8 +170,8 @@ if __name__ == '__main__':
 
     # human-driven traces on the same track in different weather conditions
     trace_paths = [
-        ['2022-06-10-13-23-01_e2e_elva_forward_4_3_km_section', 'sunny'], 
-        ['2022-06-10-13-03-20_e2e_elva_backward_4_3_km_section', 'sunny'],
+        # ['2022-06-10-13-23-01_e2e_elva_forward_4_3_km_section', 'sunny'], 
+        # ['2022-06-10-13-03-20_e2e_elva_backward_4_3_km_section', 'sunny'],
         ['2021-10-26-10-49-06_e2e_rec_ss20_elva_eval_chunk', 'cloudy'],
         ['2021-10-26-11-08-59_e2e_rec_ss20_elva_back_eval_chunk', 'cloudy'],
     ]
