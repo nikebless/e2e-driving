@@ -151,8 +151,11 @@ class NvidiaDataset(Dataset):
         self.dataset_paths = dataset_paths
         if transform:
             self.transform = transform
+            print(f'[NvidiaDataset] Using transform from argument:', self.transform)
         else:
             self.transform = transforms.Compose([Normalize()])
+            print(f'[NvidiaDataset] Using default transform:', self.transform)
+
         self.camera_name = camera
         self.target_size = 1
 
@@ -360,8 +363,7 @@ class NvidiaTrainDataset(NvidiaDatasetGrouped):
             # '2021-11-08-12-08-40_e2e_rec_ss12_raanitsa_backward.bag' \
             ]
 
-        tr = transforms.Compose([Normalize()])
-        super().__init__(train_paths, tr, camera=camera, **kwargs)
+        super().__init__(train_paths, camera=camera, **kwargs)
 
 
 class NvidiaValidationDataset(NvidiaDatasetGrouped):
@@ -381,17 +383,23 @@ class NvidiaValidationDataset(NvidiaDatasetGrouped):
             root_path / "2021-10-14-13-08-51_e2e_rec_vahi_backwards"
         ]
 
-        tr = transforms.Compose([Normalize()])
-        super().__init__(valid_paths, tr, camera=camera, **kwargs)
+        super().__init__(valid_paths, camera=camera, **kwargs)
 
 
 class NvidiaElvaDataset(NvidiaDatasetGrouped):
     # todo: remove default parameters
-    def __init__(self, root_path, camera="front_wide", **kwargs):
-        valid_paths = [
-            root_path / "2021-10-26-10-49-06_e2e_rec_ss20_elva",
-            root_path / "2021-10-26-11-08-59_e2e_rec_ss20_elva_back",
-        ]
+    def __init__(self, root_path, camera="front_wide", eval_section=False, **kwargs):
 
-        tr = transforms.Compose([Normalize()])
-        super().__init__(valid_paths, tr, camera=camera, **kwargs)
+        if eval_section:
+            # the 4.3km section used for evaluation drives (back and forth)
+            valid_paths = [
+                root_path / "2021-10-26-10-49-06_e2e_rec_ss20_elva_eval_chunk",
+                root_path / "2021-10-26-11-08-59_e2e_rec_ss20_elva_back_eval_chunk",
+            ]
+        else:
+            valid_paths = [
+                root_path / "2021-10-26-10-49-06_e2e_rec_ss20_elva",
+                root_path / "2021-10-26-11-08-59_e2e_rec_ss20_elva_back",
+            ]
+
+        super().__init__(valid_paths, camera=camera, **kwargs)
