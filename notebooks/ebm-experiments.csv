@@ -1,0 +1,31 @@
+training_run,model_name,real_interventions,drive,val_mae,model_type,vista_interventions
+1eq2jiva,mdn-1-s1,,"('2022-09-09-11-47-04',)",10.812694440624952,pilotnet-mdn,
+1eq2jiva,mdn-1-s1,,"('2022-09-09-10-51-33-mdn-1-s1',)",10.812694440624952,pilotnet-mdn,
+1bdlpf8d,mdn-3-s2,9,"('2022-09-09-10-04-05-mdn-3-s2',)",8.926731149182968,pilotnet-mdn,18.0
+33smkc56,mdn-3-s3,13,"('2022-09-09-11-23-11-mdn-3-s3',)",9.51304378547812,pilotnet-mdn,15.0
+1hbbr6dm,mdn-5-s1,15,"('2022-09-09-11-00-03-mdn-5-s1',)",9.070599925600272,pilotnet-mdn,9.0
+27dfw40i,mdn-5-s2,13,"('2022-09-09-10-27-50-mdn-5-s2',)",8.940859492046002,pilotnet-mdn,12.0
+3ftnqxcb,ebm-512-s1,2,"('2022-08-31-15-37-37_elva_ebm_512_front', '2022-08-31-15-48-15_elva_ebm_512_back')",8.607146266277077,pilotnet-ebm,1.0
+pg0eweml,ebm-256,4,"('2022-08-31-16-29-08_elva_ebm_256_front', '2022-08-31-16-42-01_elva_ebm_256_back')",8.746287028595184,pilotnet-ebm,10.0
+iddqahiv,ebm-128,3,"('2022-08-31-17-16-19_elva_ebm_128_front', '2022-08-31-17-26-53_elva_ebm_128_back')",8.340006528658169,pilotnet-ebm,13.0
+3g3wwx73,classifier-512,1,"('2022-08-31-14-52-25_elva_classifier_512_forward', '2022-08-31-15-18-55_elva_classifier_512_forward_continued', '2022-08-31-15-26-05_elva_classifier_512_back')",9.925803470768946,pilotnet-classifier,15.0
+1t7d1afv,classifier-256,11,"('2022-08-31-16-00-20_elva_classifier_256_front', '2022-08-31-16-11-28_elva_classifier_256_back')",10.058057300875063,pilotnet-classifier,32.0
+2faagb62,classifier-128,12,"('2022-08-31-16-53-38_elva_classifier_128_front', '2022-08-31-17-04-28_elva_classifier_128_back')",9.856725207852776,pilotnet-classifier,22.0
+3ftnqxcb,ebm-512-s1,5,"('2022-09-02-11-04-39_elva_ebm_512_s1_rep1',)",8.607146266277077,pilotnet-ebm,1.0
+3ftnqxcb,ebm-512-s1,3,"('2022-09-02-11-27-02_elva_ebm_512_s1_rep2',)",8.607146266277077,pilotnet-ebm,1.0
+3ftnqxcb,ebm-512-s1,5,"('2022-09-02-11-48-55_elva_ebm_512_s1_rep3',)",8.607146266277077,pilotnet-ebm,1.0
+3ftnqxcb,ebm-512-s1,5,"('2022-09-08-10-13-30_ebm-512-s1',)",8.607146266277077,pilotnet-ebm,1.0
+3dke382l,ebm-512-s2,8,"('2022-09-08-10-38-33_ebm_512_s2',)",9.021556181778696,pilotnet-ebm,44.0
+kozacohh,ebm-512-s3,8,"('2022-09-08-11-01-21_ebm-512-s3',)",8.763484877705908,pilotnet-ebm,6.0
+13nkhdy1,mae-s1,19,"('2022-09-02-09-54-31_elva_mae_s1_rep1',)",8.128144194638326,pilotnet,21.0
+13nkhdy1,mae-s1,12,"('2022-09-02-10-20-29_elva_mae_s1_rep2',)",8.128144194638326,pilotnet,21.0
+13nkhdy1,mae-s1,10,"('2022-09-02-10-42-07_elva_mae_s1_rep3',)",8.128144194638326,pilotnet,21.0
+13nkhdy1,mae-s1,4,"('2022-09-08-11-26-29_mae-s1',)",8.128144194638326,pilotnet,21.0
+bxd5wtqk,mae-s2,1,"('2022-09-08-11-49-08_mae-s2',)",7.828012066693326,pilotnet,15.0
+gwgmsh0e,mae-s3,6,"('2022-09-08-12-13-25_mae-s3',)",8.483535429912495,pilotnet,15.0
+3ftnqxcb,ebm-512-s1,2,"('e2e-ebm-512-s1-forward_2022-09-13-10-33-34', 'e2e-ebm-512-s1-backward_2022-09-13-10-44-25')",8.607146266277077,pilotnet-ebm,1.0
+2yofzwf0,ebm-50percent-s2,23,"('e2e-ebm-50percent-s2-forward_2022-09-13-11-19-28', 'e2e-ebm-50percent-s2-backward_2022-09-13-11-30-33')",9.19865960108964,pilotnet-ebm,12.0
+zie8x2vl,ebm-20percent-s2,23,"('e2e-ebm-20percent-s2-forward_2022-09-13-12-10-23', 'e2e-ebm-20percent-s2-backward_2022-09-13-12-21-25')",11.630416379828278,pilotnet-ebm,5.0
+3g3wwx73,classifier-512,4,"('e2e-classifier-512-forward_2022-09-13-10-56-50', 'e2e-classifier-512-backward_2022-09-13-11-07-29')",9.925803470768946,pilotnet-classifier,15.0
+1t56cx3v,classifier-50percent-s1,16,"('e2e-classifier-50percent-s1-forward_2022-09-13-11-42-53', 'e2e-classifier-50percent-s1-backward_2022-09-13-11-53-59')",12.855069506346585,pilotnet-classifier,29.5
+2ldsn0i0,classifier-20percent-s2,31,"('e2e-classifier-20percent-s2-forward_2022-09-13-12-33-22', 'e2e-classifier-20percent-s2-backward_2022-09-13-12-44-44')",15.802833208661067,pilotnet-classifier,18.0
