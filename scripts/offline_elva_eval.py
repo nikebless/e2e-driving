@@ -1,14 +1,7 @@
-import dataloading.nvidia as nv
-from common import OnnxModel
-import torchvision.transforms as transforms
-import pandas as pd
 from pathlib import Path
-import torch
-from tqdm import tqdm
-from metrics.metrics import calculate_open_loop_metrics
-import numpy as np
 import os
-import wandb
+import argparse
+import pandas as pd
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 CACHE_DIR = os.path.join(PROJECT_ROOT, 'scripts', 'cache')
@@ -21,6 +14,15 @@ WANDB_PROJECT = os.getenv('WANDB_PROJECT')
 
 
 def evaluate_model_on_elva(model_name):
+    import dataloading.nvidia as nv
+    from common import OnnxModel
+    import torchvision.transforms as transforms
+    import torch
+    from metrics.metrics import calculate_open_loop_metrics
+    from tqdm import tqdm
+    import numpy as np
+
+
     path_to_model = os.path.join(PROJECT_ROOT, '_models', model_name + '.onnx')
     model = OnnxModel(path_to_model)
 
@@ -45,20 +47,34 @@ def evaluate_model_on_elva(model_name):
 
     return metrics
 
+def schedule_run(model_name):
+    os.system(f'sbatch scripts/offline_elva_eval_hpc.sh --model {model_name}')
+
 if __name__ == '__main__':
 
-    df = pd.read_csv(os.path.join(PROJECT_ROOT, 'notebooks', 'ebm-experiments.csv'))
-    os.makedirs(CACHE_DIR, exist_ok=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model', type=str, default=None, required=False, help='Name of model to evaluate.')
 
-    for index, row in df.iterrows():
-        model_name = row['model_name']
+    args = parser.parse_args()
+
+    if args.model is None:
+        df = pd.read_csv(os.path.join(PROJECT_ROOT, 'notebooks', 'ebm-experiments.csv'))
+        os.makedirs(CACHE_DIR, exist_ok=True)
+
+        for index, row in df.iterrows():
+            model_name = row['model_name']
+            metrics_cache = Path(os.path.join(CACHE_DIR, f'elva_metrics_{model_name}.csv'))
+            if Path(metrics_cache).exists():
+                print(f'Already evaluated {model_name}, skipping')
+                continue
+            else:
+                print('Evaluating', model_name)
+                schedule_run(model_name)
+    else:
+        import wandb
+
+        model_name = args.model
         metrics_cache = Path(os.path.join(CACHE_DIR, f'elva_metrics_{model_name}.csv'))
-        if Path(metrics_cache).exists():
-            print(f'Already evaluated {model_name}, skipping')
-            continue
-        else:
-            print('Evaluating', model_name)
-
         config = {
             'model_path': model_name,
         }
