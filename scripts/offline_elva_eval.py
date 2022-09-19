@@ -2,6 +2,7 @@ from pathlib import Path
 import os
 import argparse
 import pandas as pd
+import wandb
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 CACHE_DIR = os.path.join(PROJECT_ROOT, 'scripts', 'cache')
@@ -15,7 +16,7 @@ WANDB_PROJECT = os.getenv('WANDB_PROJECT')
 
 def evaluate_model_on_elva(model_name):
     import dataloading.nvidia as nv
-    from common import OnnxModel
+    from common import OnnxModel, BOLT_DIR
     import torchvision.transforms as transforms
     import torch
     from metrics.metrics import calculate_open_loop_metrics
@@ -26,7 +27,7 @@ def evaluate_model_on_elva(model_name):
     path_to_model = os.path.join(PROJECT_ROOT, '_models', model_name + '.onnx')
     model = OnnxModel(path_to_model)
 
-    dataset = nv.NvidiaElvaDataset(Path('/data/Bolt/end-to-end/drives-ebm-paper'), eval_section=True, group_size=1, transform=transforms.Compose([nv.NvidiaCropWide(), nv.Normalize()]))
+    dataset = nv.NvidiaElvaDataset(Path(os.path.join(BOLT_DIR, 'end-to-end/drives-ebm-paper')), eval_section=True, group_size=1, transform=transforms.Compose([nv.NvidiaCropWide(), nv.Normalize()]))
     loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False, num_workers=8, collate_fn=dataset.collate_fn)
 
     predictions = []
@@ -61,27 +62,25 @@ if __name__ == '__main__':
         df = pd.read_csv(os.path.join(PROJECT_ROOT, 'notebooks', 'ebm-experiments.csv'))
         os.makedirs(CACHE_DIR, exist_ok=True)
 
-        for index, row in df.iterrows():
-            model_name = row['model_name']
-            metrics_cache = Path(os.path.join(CACHE_DIR, f'elva_metrics_{model_name}.csv'))
-            if Path(metrics_cache).exists():
-                print(f'Already evaluated {model_name}, skipping')
-                continue
-            else:
-                print('Evaluating', model_name)
-                schedule_run(model_name)
-    else:
-        import wandb
+        api = wandb.Api()
+        runs = api.runs(f'{WANDB_ENTITY}/{WANDB_PROJECT}')
+        done_models = set()
+        for run in runs:
+            if run.state == 'finished' and 'offline-elva-evaluation' in run.tags and run.summary.get('mae', None) is not None:
+                done_models.add(run.config.get('model_path'))
 
+        model_names = set(df['model_name'].unique().tolist()) - done_models
+        for model_name in model_names:
+            schedule_run(model_name)
+    else:
         model_name = args.model
-        metrics_cache = Path(os.path.join(CACHE_DIR, f'elva_metrics_{model_name}.csv'))
         config = {
             'model_path': model_name,
         }
         wandb.init(entity=WANDB_ENTITY, project=WANDB_PROJECT, name=model_name, job_type='offline-elva-evaluation', tags=['offline-elva-evaluation'], config=config)
+        print('config:', config)
 
         metrics = evaluate_model_on_elva(model_name)
-        metrics_df = pd.DataFrame(metrics, index=[0])
-        metrics_df.to_csv(metrics_cache, index=False)
+
         wandb.log(metrics)
         wandb.finish()
