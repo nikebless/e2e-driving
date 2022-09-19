@@ -165,7 +165,7 @@ class NvidiaDataset(Dataset):
         self.frames = self.frames.head(keep_n_frames)
 
         self.vehicle_cmd_frames = None
-        self.vehicle_cmd_frames = [pd.read_csv(dataset_path / vehicle_cmd_file) for dataset_path in self.dataset_paths if vehicle_cmd_file in dataset_path.glob("*.csv")]
+        self.vehicle_cmd_frames = [pd.read_csv(dataset_path / vehicle_cmd_file) for dataset_path in self.dataset_paths if (dataset_path / vehicle_cmd_file) in dataset_path.glob("*.csv")]
         self.vehicle_cmd_frames = pd.concat(self.vehicle_cmd_frames) if len(self.vehicle_cmd_frames) else None
 
         if filter_turns:

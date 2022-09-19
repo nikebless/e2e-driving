@@ -32,10 +32,10 @@ def calculate_closed_loop_metrics(model_frames, expert_frames, cmd_frames, fps=3
     interventions = calculate_interventions(model_frames) if interventions == None else interventions
 
     return {
-        'mae': mae,
-        'rmse': rmse,
-        'max': max,
-        'failure_rate': failure_rate,
+        'traj_mae': mae,
+        'traj_rmse': rmse,
+        'traj_max': max,
+        'traj_failure_rate': failure_rate,
         'distance': distance,
         'distance_per_intervention': distance / interventions,
         'interventions': interventions,
