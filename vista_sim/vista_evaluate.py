@@ -220,6 +220,7 @@ if __name__ == '__main__':
         print(f'{condition}: {n_crashes}')
 
     if not args.no_wandb:
-        wandb.log({'crash_count': total_crashes})
+        condition_crash_counts = {f'crash_count_{condition}': count for condition, count in crashes_by_condition.items()}
+        wandb.log({'crash_count': total_crashes, **condition_crash_counts})
 
     wandb.finish()
