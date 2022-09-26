@@ -9,17 +9,22 @@ nohup python -u train.py \
     --patience 10 \
     --max-epochs 100 \
     --model-name steering-angle \
-    --loss ce \
+    --loss mae \
     --dataset-folder /data/Bolt/end-to-end/rally-estonia-cropped \
-    --batch-size 512 \
+    --batch-size 256 \
     --num-workers 16 \
     --wandb-entity nikebless \
     --wandb-project ebm-driving \
     --ebm-train-samples 512 \
     --ebm-inference-samples 512 \
-    --model-type pilotnet-ebm \
-    --loss-variant ce-proximity-aware \
-    --temporal-regularization 0.3 \
+    --model-type pilotnet-mdn \
+    --temporal-regularization 0 \
+    --mdn-n-components 3 \
+    --mdn-init-biases 0 0 0 \
+    --mdn-lambda-sigma 0 \
+    --mdn-lambda-pi 0 \
+    --mdn-lambda-mu 0 \
+    --debug \
     &> runs/$(date +%s)-run.txt &
 
 

@@ -38,14 +38,26 @@ class MDN(nn.Module):
             Gaussian.
     """
 
-    def __init__(self, in_features, out_features, num_gaussians):
+    def __init__(self, in_features, out_features, num_gaussians, init_biases=None):
         super(MDN, self).__init__()
+        assert num_gaussians % 2 == 1, 'num_gaussians must be odd, but is {}'.format(num_gaussians)
         self.in_features = in_features
         self.out_features = out_features
         self.num_gaussians = num_gaussians
         self.pi = nn.Linear(in_features, num_gaussians) 
         self.sigma = nn.Linear(in_features, out_features * num_gaussians)
-        self.mu = nn.Linear(in_features, out_features * num_gaussians) # TODO: try initializaing the bias to left/straight/right turns
+        self.mu = nn.Linear(in_features, out_features * num_gaussians)
+        if init_biases is not None:
+            self.init_biases(init_biases)
+
+    def init_biases(self, biases_deg):
+        '''Initialize gaussians to different steering angles'''
+        assert len(biases_deg) == self.num_gaussians, 'len(biases_deg) must be equal to num_gaussians'
+
+        biases = torch.deg2rad(torch.tensor(biases_deg))
+        for i, bias in enumerate(biases):
+            print('Setting bias:', i, bias)
+            torch.nn.init.constant_(self.mu.bias[i], bias)
 
     def forward(self, x):
         pi = self.pi(x)

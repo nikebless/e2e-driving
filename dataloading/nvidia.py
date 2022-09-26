@@ -388,18 +388,20 @@ class NvidiaValidationDataset(NvidiaDatasetGrouped):
 
 class NvidiaElvaDataset(NvidiaDatasetGrouped):
     # todo: remove default parameters
-    def __init__(self, root_path, camera="front_wide", eval_section=False, **kwargs):
+    def __init__(self, root_path, camera="front_wide", eval_section=False, direction='both', **kwargs):
 
         if eval_section:
             # the 4.3km section used for evaluation drives (back and forth)
-            valid_paths = [
-                root_path / "2021-10-26-10-49-06_e2e_rec_ss20_elva_eval_chunk",
-                root_path / "2021-10-26-11-08-59_e2e_rec_ss20_elva_back_eval_chunk",
-            ]
+            valid_paths = []
+            if direction == 'both' or direction == 'forward':
+                valid_paths.append(root_path / "2021-10-26-10-49-06_e2e_rec_ss20_elva_eval_chunk")
+            if direction == 'both' or direction == 'backward':
+                valid_paths.append(root_path / "2021-10-26-11-08-59_e2e_rec_ss20_elva_back_eval_chunk")
         else:
-            valid_paths = [
-                root_path / "2021-10-26-10-49-06_e2e_rec_ss20_elva",
-                root_path / "2021-10-26-11-08-59_e2e_rec_ss20_elva_back",
-            ]
+            valid_paths = []
+            if direction == 'both' or direction == 'forward':
+                valid_paths.append(root_path / "2021-10-26-10-49-06_e2e_rec_ss20_elva")
+            if direction == 'both' or direction == 'backward':
+                valid_paths.append(root_path / "2021-10-26-11-08-59_e2e_rec_ss20_elva_back")
 
         super().__init__(valid_paths, camera=camera, **kwargs)

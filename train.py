@@ -231,6 +231,36 @@ def parse_arguments():
     )
 
     argparser.add_argument(
+        '--mdn-init-biases',
+        required=False,
+        default=None,
+        nargs='+',
+        type=float,
+        help='Initialization biases (in degrees) for the MDN layer.'
+    )
+
+    argparser.add_argument(
+        '--mdn-lambda-sigma',
+        default=0.0,
+        type=float,
+        help='Regularization weight for the MDN sigma parameters.'
+    )
+
+    argparser.add_argument(
+        '--mdn-lambda-pi',
+        default=0.0,
+        type=float,
+        help='Regularization weight for the MDN pi parameters.'
+    )
+
+    argparser.add_argument(
+        '--mdn-lambda-mu',
+        default=0.0,
+        type=float,
+        help='Regularization weight for the MDN mu parameters.'
+    )
+
+    argparser.add_argument(
         '--debug',
         action='store_true',
         help='When true, debug mode is enabled.'
@@ -264,7 +294,11 @@ class TrainingConfig:
         self.loss = args.loss
         self.loss_variant = args.loss_variant
         self.max_epochs = args.max_epochs
+        self.mdn_init_biases = args.mdn_init_biases
         self.mdn_n_components = args.mdn_n_components
+        self.mdn_lambda_sigma = args.mdn_lambda_sigma
+        self.mdn_lambda_pi = args.mdn_lambda_pi
+        self.mdn_lambda_mu = args.mdn_lambda_mu
         self.model_type = args.model_type
         self.num_workers = args.num_workers
         self.patience = args.patience
@@ -275,6 +309,8 @@ class TrainingConfig:
         self.wandb_entity = args.wandb_entity
         self.wandb_project = args.wandb_project
         self.weight_decay = args.weight_decay
+
+        print('mdn_init_biases', self.mdn_init_biases)
 
         log_format = "%(message)s"
         if self.debug:

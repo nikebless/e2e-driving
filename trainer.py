@@ -12,6 +12,7 @@ from torch.nn import functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.nn import L1Loss, MSELoss, CrossEntropyLoss, KLDivLoss
 from torch.distributions import Categorical
+import torchvision.transforms as transforms
 from sklearn.neighbors import NearestCentroid
 
 from tqdm.auto import tqdm
@@ -20,13 +21,14 @@ import time
 import logging
 from copy import deepcopy
 import matplotlib.pyplot as plt
+import matplotlib.patheffects as pe
 
 from metrics.metrics import calculate_open_loop_metrics
 
 from ebm import optimizers
 from mdn.mdn import sample as mdn_sample, mdn_loss, mdn_logprob
 from pilotnet import PilotNet, PilotnetEBM, PilotnetClassifier, PilotnetMDN
-from dataloading.nvidia import NvidiaElvaDataset
+from dataloading.nvidia import Normalize, NvidiaCropWide, NvidiaElvaDataset
 from scripts.pt_to_onnx import convert_pt_to_onnx
 
 import train
@@ -761,7 +763,7 @@ class MDNTrainer(Trainer):
         super().__init__(*args, **kwargs)
 
         self.train_conf = kwargs['train_conf']
-        self.model = PilotnetMDN(self.train_conf.mdn_n_components)
+        self.model = PilotnetMDN(self.train_conf.mdn_n_components, self.train_conf.mdn_init_biases)
         self.model.to(self.device)
 
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.train_conf.learning_rate, betas=(0.9, 0.999),
@@ -786,6 +788,22 @@ class MDNTrainer(Trainer):
 
         return np.array(all_predictions)
 
+    def regularization_loss(self):
+        sigma_l1_reg = 0
+        pi_l1_reg = 0
+        mu_l1_reg = 0
+
+        sigma_params = torch.cat([x.view(-1) for x in self.model.mdn.sigma.parameters()])
+        sigma_l1_reg = self.train_conf.mdn_lambda_sigma * torch.norm(sigma_params)
+
+        pi_params = torch.cat([x.view(-1) for x in self.model.mdn.pi.parameters()])
+        pi_l1_reg = self.train_conf.mdn_lambda_pi * torch.norm(pi_params)
+
+        mu_params = torch.cat([x.view(-1) for x in self.model.mdn.mu.parameters()])
+        mu_l1_reg = self.train_conf.mdn_lambda_mu * torch.norm(mu_params)
+
+        return sigma_l1_reg + pi_l1_reg + mu_l1_reg
+
     def train_batch(self, _, input, target, __, ___):
         inputs = input['image'].to(self.device)
         target = target.to(self.device, torch.float32)
@@ -795,6 +813,7 @@ class MDNTrainer(Trainer):
 
         pi, sigma, mu = self.model(inputs)
         loss = self.criterion(pi, sigma, mu, target)
+        loss += self.regularization_loss()
 
         self.optimizer.zero_grad(set_to_none=True)
 
@@ -805,8 +824,12 @@ class MDNTrainer(Trainer):
         model = self.model
         model.eval()
         all_predictions = []
-
         inference_times = []
+
+        prob_grid, components = self.plot_2d_evaluation_landscape(epoch)
+        if self.wandb_logging:
+            wandb.log({'mdn_landscape_elva_intersection': prob_grid,
+                       'mdn_components_elva_intersection': components}, commit=False)
 
         epoch_mae = 0.0
         epoch_temporal_reg_loss = 0.0
@@ -845,23 +868,25 @@ class MDNTrainer(Trainer):
 
             ask_batch_timestamp = time.time()
 
-        # eval_landscape_img = self.plot_2d_evaluation_landscape(epoch)
-        # if self.wandb_logging:
-        #     wandb.log({'mdn_landscape_elva_intersection': eval_landscape_img}, commit=False)
-
         avg_mae = epoch_mae / len(iterator)
         result = np.array(all_predictions)
         return avg_mae, result
 
-    def plot_2d_evaluation_landscape(self, epoch):
+    def plot_2d_evaluation_landscape(self, epoch, duration=5):
 
         # 1. Get detailed predictions on an intersection within the Elva track
-        start_idx = 550 * 30
-        end_idx = 555 * 30
 
-        elva_dataset = NvidiaElvaDataset(Path(self.train_conf.dataset_folder))
-        elva_dataset.frames = elva_dataset.frames.iloc[start_idx:end_idx]
-        area_of_interest_loader = torch.utils.data.DataLoader(elva_dataset, batch_size=self.train_conf.batch_size, 
+        def crop_intersection(df):
+            intersection_start = df[df['position_x'] < -8040].iloc[0]
+            df = df[df['row_id'] >= intersection_start['row_id']]
+            df = df[df['row_id'] <= intersection_start['row_id'] + duration * 30]
+            return df
+
+        elva_dataset = NvidiaElvaDataset(Path(self.train_conf.dataset_folder).parent / 'drives-ebm-paper', 
+                                        eval_section=True, direction='forward',
+                                        transform=transforms.Compose([NvidiaCropWide(), Normalize()]))
+        elva_dataset.frames = crop_intersection(elva_dataset.frames)
+        area_of_interest_loader = torch.utils.data.DataLoader(elva_dataset, batch_size=self.train_conf.batch_size//8, 
                         num_workers=self.train_conf.num_workers, shuffle=False, pin_memory=True, persistent_workers=False,
                         collate_fn=elva_dataset.collate_fn)
 
@@ -897,14 +922,14 @@ class MDNTrainer(Trainer):
         logging.debug(f'targets_history.shape: {targets_history.shape}')
 
         # 2. Plot the full mixture distribution
-        n_samples = 1024
+        n_samples = 512
         bound = self.train_conf.steering_bound
 
         pis_repeated = torch.repeat_interleave(pi_history, n_samples, dim=0)
         sigmas_repeated = torch.repeat_interleave(sigma_history, n_samples, dim=0)
         mus_repeated = torch.repeat_interleave(mu_history, n_samples, dim=0)
         steering_1d_grid = torch.linspace(-bound, bound, n_samples)
-        steering_1d_grid_repeated = steering_1d_grid.repeat(pi.shape[0], 1).reshape(-1)
+        steering_1d_grid_repeated = steering_1d_grid.repeat(pi_history.shape[0], 1).reshape(-1)
         logging.debug(f'pis_repeated.shape: {pis_repeated.shape}')
         logging.debug(f'sigmas_repeated.shape: {sigmas_repeated.shape}')
         logging.debug(f'mus_repeated.shape: {mus_repeated.shape}')
@@ -914,6 +939,7 @@ class MDNTrainer(Trainer):
         logprob_grid = mdn_logprob(pis_repeated, sigmas_repeated, mus_repeated, steering_1d_grid_repeated).reshape(-1, n_samples)
         prob_grid = torch.exp(logprob_grid)
         inverted_prob_grid = 1.0 - prob_grid
+        normalized_prob_grid = (inverted_prob_grid - inverted_prob_grid.min()) / (inverted_prob_grid.max() - inverted_prob_grid.min())
         targets_history_x = get_closest(steering_1d_grid, targets_history)
         preds_history_x = get_closest(steering_1d_grid, preds_history)
         logging.debug(f'prob_grid.shape: {prob_grid.shape}')
@@ -921,10 +947,10 @@ class MDNTrainer(Trainer):
         logging.debug(f'preds_history_x.shape: {preds_history_x.shape}')
 
         fig = plt.figure(figsize=(10,10))
-        plt.imshow(inverted_prob_grid, aspect=6.85, cmap='terrain')
+        plt.imshow(normalized_prob_grid, aspect=n_samples/pi_history.shape[0], cmap='terrain')
         plt.xticks(np.linspace(0, n_samples, 16), np.linspace(-bound, bound, 16).round(2))
-        plt.plot(targets_history_x, torch.arange(0, pi_history.shape[0]), color='purple', linestyle='--', label='Human driver')
-        plt.plot(preds_history_x, torch.arange(0, pi_history.shape[0]), color='red', linestyle='--', label='Max-likelihood prediction')
+        plt.plot(targets_history_x, torch.arange(0, pi_history.shape[0]), color='white', linestyle='--', linewidth=2, label='Human driver', path_effects=[pe.Stroke(linewidth=2, foreground='black'), pe.Normal()])
+        plt.plot(preds_history_x, torch.arange(0, pi_history.shape[0]), color='red', linestyle='--', linewidth=2, label='Max-likelihood prediction')
         plt.title('Elva track intersection - MoG')
         plt.xlabel('Steering angle (radians)')
         plt.ylabel('Frame # (@ 30 hz)')
@@ -933,10 +959,26 @@ class MDNTrainer(Trainer):
         plt.colorbar(fraction=0.046, pad=0.04)
         plt.legend()
         if self.train_conf.debug:
-            plt.savefig(f'prob_grid_{epoch}.png')
-        wandb_img = wandb.Image(fig)
+            torch.save(logprob_grid, f'logprob_grid_{epoch}.pt')
+            fig.savefig(f'prob_grid_{epoch}.png')
+        wandb_img_probgrid = wandb.Image(fig)
         plt.close('all')
-        return wandb_img
+
+        n_components = self.train_conf.mdn_n_components
+        has_nonzero_init_biases = torch.nonzero(torch.tensor(self.train_conf.mdn_init_biases)).shape[0] > 0
+        fig = plt.figure(figsize=(10,10))
+        for i in range(mu_history.shape[1]):
+            plt.plot(mu_history[:, i], torch.arange(0, mu_history.shape[0]), label=f'Component {i}. Pi={torch.mean(pi_history[:, i]):.2f}. Sigma={torch.mean(sigma_history[:, i]):.2f}')
+        plt.legend()
+        plt.xticks(np.linspace(-bound, bound, 16), np.linspace(-bound, bound, 16).round(2))
+        plt.gca().invert_xaxis()
+        if self.train_conf.debug:
+            fig.savefig(f'components{n_components}_initbiases{has_nonzero_init_biases}_epoch{epoch}.png')
+        wandb_img_components = wandb.Image(fig)
+        plt.close('all')
+
+
+        return (wandb_img_probgrid, wandb_img_components)
 
     def save_onnx(self, _, __):
         model_type = self.train_conf.model_type
