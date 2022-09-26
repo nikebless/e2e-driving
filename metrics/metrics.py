@@ -53,18 +53,16 @@ def calculate_open_loop_metrics(predicted_steering, true_steering, fps):
 
     logging.debug(f'Predicted degrees: {predicted_degrees[somewhere_middle:somewhere_middle+20]}')
     logging.debug(f'True degrees: {true_degrees[somewhere_middle:somewhere_middle+20]}')
-    errors = np.abs(true_degrees - predicted_degrees)
-    mae = errors.mean()
-    rmse = np.sqrt((errors ** 2).mean())
-    max = errors.max()
-
+    errors_signed = predicted_degrees - true_degrees # positive means error to the left
+    errors = np.abs(errors_signed)
     whiteness = calculate_whiteness(predicted_degrees, fps)
     expert_whiteness = calculate_whiteness(true_degrees, fps)
 
     return {
-        'mae': mae,
-        'rmse': rmse,
-        'max': max,
+        'mae': errors.mean(),
+        'rmse': np.sqrt((errors ** 2).mean()),
+        'bias': errors_signed.mean(),
+        'max': errors.max(),
         'whiteness': whiteness,
         'expert_whiteness': expert_whiteness
     }

@@ -59,18 +59,15 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.model is None:
-        df = pd.read_csv(os.path.join(PROJECT_ROOT, 'notebooks', 'ebm-experiments.csv'))
-        os.makedirs(CACHE_DIR, exist_ok=True)
-
-        api = wandb.Api()
-        runs = api.runs(f'{WANDB_ENTITY}/{WANDB_PROJECT}')
-        done_models = set()
-        for run in runs:
-            if run.state == 'finished' and 'offline-elva-evaluation' in run.tags and run.summary.get('mae', None) is not None:
-                done_models.add(run.config.get('model_path'))
-
-        model_names = set(df['model_name'].unique().tolist()) - done_models
-        for model_name in model_names:
+        models = [
+            ('ebm-normal-1-s1', '3jk7cnqa'),
+            ('ebm-spatial-0-s2', '2jvl4yhn'),
+            ('mae-s2', 'bxd5wtqk'),
+            ('classifier-512', '3g3wwx73'),
+            ('ebm-512-s1', '3ftnqxcb'),
+            ('mdn-5-s1', '1hbbr6dm'),
+        ]
+        for model_name, _ in models:
             schedule_run(model_name)
     else:
         model_name = args.model
