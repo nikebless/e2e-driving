@@ -173,11 +173,12 @@ class PilotnetMDN(nn.Module):
     The rest transformed from a regressor into a discretized classification model.
     """
 
-    def __init__(self, n_gaussians=3, init_biases=None):
+    def __init__(self, n_gaussians=3, init_biases=None, old_version=False):
         super().__init__()
 
         self.n_gaussians = n_gaussians
         self.init_biases = init_biases
+        self.old_version = old_version
 
         self.features = nn.Sequential(
             nn.Conv2d(3, 24, 5, stride=2),
@@ -209,10 +210,17 @@ class PilotnetMDN(nn.Module):
             nn.Tanh(),
         )
 
-        self.mdn = MDN(10, 1, n_gaussians, init_biases)
+        if old_version:
+            self.regressor.append(MDN(10, 1, n_gaussians, init_biases))
+        else:
+            self.mdn = MDN(10, 1, n_gaussians, init_biases)
 
     def forward(self, x):
         x = self.features(x)
-        x = self.regressor(x)
-        outs = self.mdn(x)
-        return outs
+        if self.old_version:
+            outs = self.regressor(x)
+            return outs
+        else:
+            x = self.regressor(x)
+            outs = self.mdn(x)
+            return outs
