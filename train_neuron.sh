@@ -20,7 +20,7 @@ nohup python -u train.py \
     --model-type pilotnet-mdn \
     --temporal-regularization 0 \
     --mdn-n-components 3 \
-    --mdn-init-biases 0 0 0 \
+    --mdn-init-biases -90 0 90 \
     --mdn-lambda-sigma 0 \
     --mdn-lambda-pi 0 \
     --mdn-lambda-mu 0 \
