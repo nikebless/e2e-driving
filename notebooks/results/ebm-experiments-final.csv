@@ -1,6 +1,6 @@
 training_run,model_name,real_interventions,drive
 3ftnqxcb,ebm-512-s1,4,"('ebm-paper-ebm-512-s1-forward_2022-09-21-10-51-39', 'ebm-paper-ebm-512-s1-backward_2022-09-21-11-02-14')"
-3ftnqxcb,ebm-512-s1,1,"('ebm-paper-classifier-512-forward_2022-09-22-11-47-18', 'ebm-paper-classifier-512-backward_2022-09-22-11-58-03')"
+3ftnqxcb,ebm-512-s1,1,"('ebm-paper-ebm-512-s1-forward_2022-09-22-11-02-58', 'ebm-paper-ebm-512-s1-backward_2022-09-22-11-13-52')"
 3ftnqxcb,ebm-512-s1,2,"('ebm-paper-ebm-512-s1-forward_2022-09-23-11-18-29', 'ebm-paper-ebm-512-s1-backwards_2022-09-23-11-07-13')"
 3jk7cnqa,ebm-normal-1-s1,5,"('e2e-ebm-normal-1-s1-day1-forward_2022-09-20-13-37-56', 'e2e-ebm-normal-1-s1-day1-backward_2022-09-20-13-48-42')"
 3jk7cnqa,ebm-normal-1-s1,2,"('ebm-paper-ebm-normal-1-s1-forward_2022-09-22-12-15-22', 'ebm-paper-ebm-normal-1-s1-backward_2022-09-22-12-25-57')"
@@ -11,7 +11,6 @@ training_run,model_name,real_interventions,drive
 bxd5wtqk,mae-s2,2,"('e2e-mae-s2-day1-forward_2022-09-20-11-25-14', 'e2e-mae-s2-day1-backward_2022-09-20-11-35-49')"
 bxd5wtqk,mae-s2,2,"('ebm-paper-mae-s2-forward_2022-09-21-12-22-57', 'ebm-paper-mae-s2-backward_2022-09-21-12-34-47')"
 bxd5wtqk,mae-s2,1,"('ebm-paper-mae-s2-forward_2022-09-23-10-31-24', 'ebm-paper-mae-s2-backward_2022-09-23-10-19-55')"
-3g3wwx73,classifier-512,7,"('e2e-classifier-512-day1-forward_2022-09-20-12-20-47', 'e2e-classifier-512-day1-backward_2022-09-20-12-31-35')"
 3g3wwx73,classifier-512,1,"('ebm-paper-classifier-512-forward_2022-09-21-11-36-50', 'ebm-paper-classifier-512-backward_2022-09-21-11-47-38')"
 3g3wwx73,classifier-512,7,"('ebm-paper-classifier-512-forward_2022-09-22-11-47-18', 'ebm-paper-classifier-512-backward_2022-09-22-11-58-03')"
 3g3wwx73,classifier-512,1,"('ebm-paper-classifier-512-forward_2022-09-23-12-05-48', 'ebm-paper-classifier-512-backwards_2022-09-23-11-54-32')"
