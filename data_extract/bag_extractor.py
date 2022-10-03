@@ -10,7 +10,11 @@ from tqdm import tqdm
 from pathlib import Path
 
 from argparse import ArgumentParser
+
 from tf.transformations import euler_from_quaternion
+from torchvision.transforms import InterpolationMode
+import torchvision.transforms.functional as F
+import torch
 
 # TODO: rename file to dataset_extract or something similar
 
@@ -18,7 +22,7 @@ class NvidiaDriveImporter:
 
     def __init__(self, bag_files, extract_dir, resize_camera_images, crop_camera_images,
                  camera_crop_xmin, camera_crop_xmax, camera_crop_ymin, camera_crop_ymax,
-                 resize_scale, extract_side_cameras, extract_lidar, image_type):
+                 resize_scale, extract_side_cameras, extract_lidar, image_type, antialias):
         self.bag_files = bag_files
         self.extract_dir = extract_dir
         self.resize_camera_image = resize_camera_images
@@ -31,6 +35,7 @@ class NvidiaDriveImporter:
         self.extract_side_cameras = extract_side_cameras
         self.exract_lidar = extract_lidar
         self.image_type = image_type
+        self.antialias = antialias
 
         self.steer_topic = '/pacmod/parsed_tx/steer_rpt'
         self.speed_topic = '/pacmod/parsed_tx/vehicle_speed_rpt'
@@ -287,7 +292,9 @@ class NvidiaDriveImporter:
         return camera_df
     
     def resize(self, img):
-        return cv2.resize(img, dsize=(self.scaled_width, self.scaled_height), interpolation=cv2.INTER_LINEAR)
+        img = torch.tensor(img, dtype=torch.uint8).permute(2, 0, 1)
+        img = F.resize(img, (self.scaled_height, self.scaled_width), antialias=self.antialias, interpolation=InterpolationMode.BILINEAR)
+        return img.permute(1, 2, 0).numpy()
 
     def crop(self, img):
         return img[self.camera_crop_ymin:self.camera_crop_ymax, self.camera_crop_xmin:self.camera_crop_xmax, :]
@@ -320,6 +327,10 @@ class OusterImage(object):
 
 if __name__ == "__main__":
     parser = ArgumentParser()
+    parser.add_argument("--antialias", 
+                        default=False,
+                        action="store_true", 
+                        help="Use antialiasing when resizing")
     parser.add_argument("--bag-file",
                         help="Path to bag file to extract")
 
@@ -370,13 +381,13 @@ if __name__ == "__main__":
                         )
 
     parser.add_argument("--camera-crop-ymin",
-                        default=570,
+                        default=520,
                         type=int,
                         help="Camera image crop vertical minimum position."
                         )
 
     parser.add_argument("--camera-crop-ymax",
-                        default=914,
+                        default=864,
                         type=int,
                         help="Camera image crop vertical maximum position."
                         )
@@ -397,5 +408,6 @@ if __name__ == "__main__":
                                    args.camera_crop_xmin, args.camera_crop_xmax,
                                    args.camera_crop_ymin, args.camera_crop_ymax,
                                    args.resize_scale,
-                                   args.extract_side_cameras, args.extract_lidar, args.image_type)
+                                   args.extract_side_cameras, args.extract_lidar, args.image_type,
+                                   args.antialias)
     importer.import_bags(args.force)

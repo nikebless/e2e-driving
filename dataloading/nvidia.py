@@ -17,24 +17,6 @@ import torchvision.transforms.functional as F
 from skimage.util import random_noise
 
 
-class NvidiaResizeAndCrop(object):
-    def __call__(self, data):
-        xmin = 186
-        ymin = 600
-
-        scale = 6.0
-        width = 258
-        height = 66
-        scaled_width = int(width * scale)
-        scaled_height = int(height * scale)
-
-        cropped = transforms.functional.resized_crop(data["image"], ymin, xmin, scaled_height, scaled_width,
-                                                     (height, width))
-
-        data["image"] = cropped
-        return data
-
-
 class NvidiaCropWide(object):
     def __init__(self, x_delta=0):
         self.x_delta = x_delta
@@ -56,53 +38,11 @@ class NvidiaCropWide(object):
         data["image"] = cropped
         return data
 
-
-class CropViT(object):
-    def __call__(self, data):
-        xmin = 540
-        xmax = 1260
-
-        ymin = 244
-        ymax = 964
-
-        scale = 0.312
-
-        height = ymax - ymin
-        width = xmax - xmin
-        cropped = F.resized_crop(data["image"], ymin, xmin, height, width,
-                                                     (int(scale * height), int(scale * width)))
-        data["image"] = cropped
-        return data
-
-
-class NvidiaSideCameraZoom(object):
-
-    def __init__(self, zoom_ratio):
-        self.zoom_ratio = zoom_ratio
-
-    def __call__(self, data):
-        width = 1920
-        height = 1208
-
-        xmin = int(self.zoom_ratio * width)
-        ymin = int(self.zoom_ratio * height)
-
-        scaled_width = width - (2 * xmin)
-        scaled_height = height - (2 * ymin)
-
-        cropped = F.resized_crop(data["image"], ymin, xmin, scaled_height, scaled_width,
-                                                     (height, width))
-
-        data["image"] = cropped
-        return data
-
-
 class AugmentationConfig:
     def __init__(self, color_prob=0.0, noise_prob=0.0, blur_prob=0.0):
         self.color_prob = color_prob
         self.noise_prob = noise_prob
         self.blur_prob = blur_prob
-
 
 class AugmentImage:
     def __init__(self, augment_config):
@@ -133,10 +73,8 @@ class AugmentImage:
 
 class Normalize(object):
     def __call__(self, data, transform=None):
-        # normalize = transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
         image = data["image"]
         image = image / 255
-        # data["image"] = normalize(image)
         data["image"] = image
         return data
 

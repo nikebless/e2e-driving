@@ -106,4 +106,4 @@ BAGS=(
     'ebm-paper-mdn-5-s1-forward_2022-09-23-10-55-27.bag' \
 )
 
-srun python ./image_extractor.py --bag-file=/gpfs/space/projects/Bolt/bagfiles/${BAGS[$SLURM_ARRAY_TASK_ID]} --extract-dir=/gpfs/space/projects/Bolt/end-to-end/drives-ebm-paper
+srun python ./bag_extractor.py --bag-file=/gpfs/space/projects/Bolt/bagfiles/${BAGS[$SLURM_ARRAY_TASK_ID]} --extract-dir=/gpfs/space/projects/Bolt/end-to-end/drives-ebm-paper

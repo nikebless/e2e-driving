@@ -39,4 +39,4 @@ BAGS=(
 
 
 ./extract_rocket.sh ${BAGS[$SLURM_ARRAY_TASK_ID]}  /data/Bolt/drives-nikita-thesis
-python ./image_extractor.py --extract-lidar --bag-file=/gpfs/space/projects/Bolt/bagfiles/$1 --extract-dir=$2
+python ./bag_extractor.py --extract-lidar --bag-file=/gpfs/space/projects/Bolt/bagfiles/$1 --extract-dir=$2
