@@ -11,6 +11,7 @@ __pycache__
 /runs/
 /temp/
 /tmp/
+/out/
 slurm*
 **/front_wide/*.png
 .env

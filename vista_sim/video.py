@@ -1,7 +1,7 @@
 import shutil, os, subprocess
 import socket
 import cv2
-import uuid
+import time
 
 HOSTNAME = socket.gethostname()
 FFMPEG_BIN = '/usr/local/bin/ffmpeg' if HOSTNAME == 'neuron' else 'ffmpeg'
@@ -16,13 +16,14 @@ class VideoStream:
     - h264_nvenc encoding options (note the lossless compression "-preset 10"): 
         https://gist.github.com/nico-lab/e1ba48c33bf2c7e1d9ffdd9c1b8d0493
     '''
-    def __init__(self, fps=30):
-        # self.tmp = "./tmp"
-        self.tmp = os.path.join('.', str(uuid.uuid4().hex)[:8])
+    def __init__(self, fps=30, suffix='', no_encoding=False):
+        self.no_encoding = no_encoding
+        dir_name = str(int(time.time())) + suffix
+        self.tmp = os.path.join('.', 'out', dir_name)
         self.fps = fps
         if os.path.exists(self.tmp) and os.path.isdir(self.tmp):
-            shutil.rmtree(self.tmp)
-        os.mkdir(self.tmp)
+            raise f'VideoStream: tmp directory {self.tmp} already exists!'
+        os.makedirs(self.tmp, exist_ok=True)
         self.index = 0
 
     def write(self, image):
@@ -34,7 +35,10 @@ class VideoStream:
         if NVIDIA_ACCEL:
             # -preset 10 is lossless compression
             # -cq 0 is best quality given compression
-            encoding = '-c:v h264_nvenc -preset hq -profile:v high -rc-lookahead 8 -bf 2 -rc vbr -cq 30 -b:v 0 -maxrate 120M -bufsize 240M'
+            encoding = '-c:v h264_nvenc -preset hq -profile:v high -rc-lookahead 8 -bf 2 -rc vbr -cq 15 -b:v 0 -maxrate 120M -bufsize 240M'
+
+        if self.no_encoding:
+            encoding = '-codec copy'
         cmd = f"{FFMPEG_BIN} -f image2 -framerate {self.fps} -i {self.tmp}/%04d.png {encoding} -y {fname}"
         subprocess.call(cmd, shell=True)
         shutil.rmtree(self.tmp)
