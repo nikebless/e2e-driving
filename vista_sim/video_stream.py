@@ -16,14 +16,11 @@ class VideoStream:
     - h264_nvenc encoding options (note the lossless compression "-preset 10"): 
         https://gist.github.com/nico-lab/e1ba48c33bf2c7e1d9ffdd9c1b8d0493
     '''
-    def __init__(self, fps=30, suffix='', no_encoding=False):
+    def __init__(self, root_dir='.', fps=30, suffix='', no_encoding=False):
         self.no_encoding = no_encoding
-        dir_name = str(int(time.time())) + suffix
-        self.tmp = os.path.join('.', 'out', dir_name)
+        self.tmp = os.path.join(root_dir, 'tmp' + suffix)
         self.fps = fps
-        if os.path.exists(self.tmp) and os.path.isdir(self.tmp):
-            raise f'VideoStream: tmp directory {self.tmp} already exists!'
-        os.makedirs(self.tmp, exist_ok=True)
+        os.makedirs(self.tmp)
         self.index = 0
 
     def write(self, image):

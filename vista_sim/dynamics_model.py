@@ -55,3 +55,18 @@ class OnnxDynamicsModel:
         self.hidden_state = np.zeros(self.hidden_state_shape).astype(np.float32)
         self.steps_done = 0
     
+
+class NaiveSmoothingModel:
+    def __init__(self, alpha=0.075):
+        self.alpha = alpha
+        self.last_effective_steering = None
+
+    def predict(self, steering_command):
+        if self.last_effective_steering is None:
+            self.last_effective_steering = steering_command
+
+        self.last_effective_steering = self.alpha * steering_command + (1 - self.alpha) * self.last_effective_steering
+        return self.last_effective_steering
+
+    def reset(self):
+        self.last_effective_steering = None
