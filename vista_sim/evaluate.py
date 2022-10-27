@@ -175,7 +175,7 @@ if __name__ == '__main__':
     if sys.version_info[1] < 9:
         parser.add_argument('--antialias', action='store_true', help='Use antialiasing when resizing the image')
         parser.add_argument('--wandb',action='store_true', help='Use Weights and Biases for logging.')
-        parser.add_argument('--save-video', action='store_true', required=True, help='Save video of model run.')
+        parser.add_argument('--save-video', action='store_true', help='Save video of model run.')
     else:
         # this will require supplying either --antialias or --no-antialias
         parser.add_argument('--antialias', action=argparse.BooleanOptionalAction, required=True, help='Use antialiasing when resizing the image')
