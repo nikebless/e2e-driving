@@ -20,7 +20,7 @@ import vista
 from vista.entities.agents.Dynamics import steering2curvature
 from vista.entities.sensors.camera_utils.ViewSynthesis import DepthModes
 
-from common import BOLT_DIR, OnnxSteeringModel, Timing
+from common import BOLT_DIR, OnnxSteeringModel
 from vista_sim.preprocessing import grab_and_preprocess_obs, get_camera_size
 from vista_sim.video_stream import VideoStream
 from vista_sim.dynamics_model import OnnxDynamicsModel
@@ -36,7 +36,6 @@ OUTPUT_DIR = 'out'
 LOG_FREQUENCY_SEC = 1
 SRC_FPS = 30
 FPS = 10
-FRAME_START_OFFSET = 100
 SECONDS_SKIP_AFTER_CRASH = 2
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -86,15 +85,14 @@ def run_evaluation_episode(model, world, camera, car, antialias, video_dir, save
     i_segment = 0
 
     world.reset()
-    # FRAME_START_OFFSET is magic. without doing this, restarting at an earlier frame started the trace EARLIER than frame 0. no idea how this works.
-    # TODO: check that this is still necessary with new traces
-    car.reset(0, i_segment, FRAME_START_OFFSET) 
+    car.reset(0, i_segment, 0) 
     display.reset()
     observation = grab_and_preprocess_obs(car, camera, antialias, resize_mode)
     n_segments = len(car.trace.good_timestamps[car.trace._multi_sensor.master_sensor])
 
     last_driven_frame_idx = 0
     crash_times = []
+    car_timestamp_start = car._timestamp
 
 
     while True:
@@ -115,6 +113,7 @@ def run_evaluation_episode(model, world, camera, car, antialias, video_dir, save
         step_time = time.perf_counter() - step_start
 
         observation = grab_and_preprocess_obs(car, camera, antialias, resize_mode)
+        i_step += 1
 
         vis_start = time.perf_counter()
         if save_video:
@@ -123,16 +122,12 @@ def run_evaluation_episode(model, world, camera, car, antialias, video_dir, save
             stream_cropped.write(observation * 255.)
         vis_time = time.perf_counter() - vis_start
 
-        print( f'\nStep {i_step} ({i_step / FPS:.0f}s) env step: {step_time:.2f}s | inference: {inference_time:.4f}s | visualization: {vis_time:.2f}s' )
-
-        i_step += 1
-        if i_step % (FPS * LOG_FREQUENCY_SEC) == 0:
-            print(f'Step {i_step} ({i_step / FPS:.0f}s) - Crashes so far: {len(crash_times)}')
+        print( f'\nStep {i_step} ({car._timestamp - car_timestamp_start:.0f}s, segment: {i_segment}, frame: {last_driven_frame_idx}) env step: {step_time:.2f}s | inference: {inference_time:.4f}s | visualization: {vis_time:.2f}s | crashes: {len(crash_times)}' )
 
         if check_out_of_lane(car):
             restart_at_frame = last_driven_frame_idx + SECONDS_SKIP_AFTER_CRASH*SRC_FPS
-            print(f'Crashed at step {i_step} (frame={last_driven_frame_idx}) ({i_step / FPS:.0f}s). Re-engaging at frame {restart_at_frame}!')
-            crash_times.append(i_step / FPS)
+            print(f'Crashed at step {i_step} (frame={last_driven_frame_idx}) ({car._timestamp - car_timestamp_start:.0f}s). Re-engaging at frame {restart_at_frame}!')
+            crash_times.append(car._timestamp - car_timestamp_start)
             car.reset(0, i_segment, restart_at_frame)
             display.reset()
             if dynamics_model is not None:
@@ -142,9 +137,9 @@ def run_evaluation_episode(model, world, camera, car, antialias, video_dir, save
             if i_segment < n_segments - 1:
                 # only finished segment, not the whole trace
 
-                print(f'Finished segment {i_segment} at step ({i_step}) ({i_step / FPS:.0f}s).')
+                print(f'Finished segment {i_segment} at step ({i_step}) ({car._timestamp - car_timestamp_start:.0f}s).')
                 i_segment += 1
-                car.reset(0, i_segment, FRAME_START_OFFSET)
+                car.reset(0, i_segment, 0)
                 display.reset()
                 if dynamics_model is not None:
                     dynamics_model.reset()
@@ -152,7 +147,7 @@ def run_evaluation_episode(model, world, camera, car, antialias, video_dir, save
                 last_driven_frame_idx = car.frame_index
 
             else:
-                print(f'Finished trace at step {i_step} ({i_step / FPS:.0f}s).')
+                print(f'Finished trace at step {i_step} ({car._timestamp - car_timestamp_start:.0f}s).')
                 break
         else:
             last_driven_frame_idx = car.frame_index
