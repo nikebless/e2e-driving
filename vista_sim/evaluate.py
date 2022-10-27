@@ -37,6 +37,7 @@ LOG_FREQUENCY_SEC = 1
 SRC_FPS = 30
 FPS = 10
 SECONDS_SKIP_AFTER_CRASH = 2
+FRAME_RESET_OFFSET = 1
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -83,17 +84,18 @@ def run_evaluation_episode(model, world, camera, car, antialias, video_dir, save
 
     i_step = 0
     i_segment = 0
-
-    world.reset()
-    car.reset(0, i_segment, 0) 
-    display.reset()
-    observation = grab_and_preprocess_obs(car, camera, antialias, resize_mode)
-    n_segments = len(car.trace.good_timestamps[car.trace._multi_sensor.master_sensor])
-
     last_driven_frame_idx = 0
     crash_times = []
-    car_timestamp_start = car._timestamp
 
+    world.reset()
+    car.reset(0, i_segment, FRAME_RESET_OFFSET)
+    display.reset()
+    observation = grab_and_preprocess_obs(car, camera, antialias, resize_mode)
+
+    car_timestamp_start = car._timestamp
+    n_segments = len(car.trace.good_timestamps[car.trace._multi_sensor.master_sensor])
+
+    print('segments:', [len(seg) for seg in car.trace.good_timestamps[car.trace._multi_sensor.master_sensor]])
 
     while True:
 
@@ -125,32 +127,37 @@ def run_evaluation_episode(model, world, camera, car, antialias, video_dir, save
         print( f'\nStep {i_step} ({car._timestamp - car_timestamp_start:.0f}s, segment: {i_segment}, frame: {last_driven_frame_idx}) env step: {step_time:.2f}s | inference: {inference_time:.4f}s | visualization: {vis_time:.2f}s | crashes: {len(crash_times)}' )
 
         if check_out_of_lane(car):
+            crash_times.append(car._timestamp - car_timestamp_start)
             restart_at_frame = last_driven_frame_idx + SECONDS_SKIP_AFTER_CRASH*SRC_FPS
             print(f'Crashed at step {i_step} (frame={last_driven_frame_idx}) ({car._timestamp - car_timestamp_start:.0f}s). Re-engaging at frame {restart_at_frame}!')
-            crash_times.append(car._timestamp - car_timestamp_start)
-            car.reset(0, i_segment, restart_at_frame)
-            display.reset()
-            if dynamics_model is not None:
-                dynamics_model.reset()
-            observation = grab_and_preprocess_obs(car, camera, antialias, resize_mode)
-        if car.done:
-            if i_segment < n_segments - 1:
-                # only finished segment, not the whole trace
 
+            try:
+                car.reset(0, i_segment, restart_at_frame)
+            except IndexError:
+                if i_segment == n_segments - 1:
+                    print(f'Finished trace at step {i_step} ({car._timestamp - car_timestamp_start:.0f}s).')
+                    break
                 print(f'Finished segment {i_segment} at step ({i_step}) ({car._timestamp - car_timestamp_start:.0f}s).')
                 i_segment += 1
-                car.reset(0, i_segment, 0)
-                display.reset()
-                if dynamics_model is not None:
-                    dynamics_model.reset()
-                observation = grab_and_preprocess_obs(car, camera, antialias, resize_mode)
-                last_driven_frame_idx = car.frame_index
+                car.reset(0, i_segment, FRAME_RESET_OFFSET)
 
+            display.reset()
+            if dynamics_model is not None: dynamics_model.reset()
+            observation = grab_and_preprocess_obs(car, camera, antialias, resize_mode)
+
+        if car.done:
+            if i_segment < n_segments - 1:
+                print(f'Finished segment {i_segment} at step ({i_step}) ({car._timestamp - car_timestamp_start:.0f}s).')
+                i_segment += 1
+                car.reset(0, i_segment, FRAME_RESET_OFFSET)
+                display.reset()
+                if dynamics_model is not None: dynamics_model.reset()
+                observation = grab_and_preprocess_obs(car, camera, antialias, resize_mode)
             else:
                 print(f'Finished trace at step {i_step} ({car._timestamp - car_timestamp_start:.0f}s).')
                 break
-        else:
-            last_driven_frame_idx = car.frame_index
+
+        last_driven_frame_idx = car.frame_index
 
     if save_video:
         print('Saving trace videos to:', video_dir)
