@@ -1,4 +1,5 @@
 import os
+import sys
 os.environ['PYOPENGL_PLATFORM'] = 'egl'
 os.environ['EGL_DEVICE_ID'] = os.environ.get('CUDA_AVAILABLE_DEVICES', '0')
 
@@ -82,11 +83,15 @@ def run_evaluation_episode(model, world, camera, car, antialias, video_dir, save
         stream_cropped = VideoStream(video_dir, FPS, suffix='_cropped', no_encoding=True)
 
     i_step = 0
+    i_segment = 0
 
     world.reset()
-    car.reset(0, 0, FRAME_START_OFFSET) # magic. without doing this, restarting at an earlier frame will start the trace EARLIER than frame 0. no idea how this works.
+    # FRAME_START_OFFSET is magic. without doing this, restarting at an earlier frame started the trace EARLIER than frame 0. no idea how this works.
+    # TODO: check that this is still necessary with new traces
+    car.reset(0, i_segment, FRAME_START_OFFSET) 
     display.reset()
     observation = grab_and_preprocess_obs(car, camera, antialias, resize_mode)
+    n_segments = len(car.trace.good_timestamps[car.trace._multi_sensor.master_sensor])
 
     last_driven_frame_idx = 0
     crash_times = []
@@ -128,14 +133,27 @@ def run_evaluation_episode(model, world, camera, car, antialias, video_dir, save
             restart_at_frame = last_driven_frame_idx + SECONDS_SKIP_AFTER_CRASH*SRC_FPS
             print(f'Crashed at step {i_step} (frame={last_driven_frame_idx}) ({i_step / FPS:.0f}s). Re-engaging at frame {restart_at_frame}!')
             crash_times.append(i_step / FPS)
-            car.reset(0, 0, restart_at_frame)
+            car.reset(0, i_segment, restart_at_frame)
             display.reset()
             if dynamics_model is not None:
                 dynamics_model.reset()
             observation = grab_and_preprocess_obs(car, camera, antialias, resize_mode)
         if car.done:
-            print(f'Finished at step {i_step} ({i_step / FPS:.0f}s).')
-            break
+            if i_segment < n_segments - 1:
+                # only finished segment, not the whole trace
+
+                print(f'Finished segment {i_segment} at step ({i_step}) ({i_step / FPS:.0f}s).')
+                i_segment += 1
+                car.reset(0, i_segment, FRAME_START_OFFSET)
+                display.reset()
+                if dynamics_model is not None:
+                    dynamics_model.reset()
+                observation = grab_and_preprocess_obs(car, camera, antialias, resize_mode)
+                last_driven_frame_idx = car.frame_index
+
+            else:
+                print(f'Finished trace at step {i_step} ({i_step / FPS:.0f}s).')
+                break
         else:
             last_driven_frame_idx = car.frame_index
 
@@ -153,10 +171,18 @@ if __name__ == '__main__':
     run_start_time = int(time.time())
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--antialias', action=argparse.BooleanOptionalAction, required=True, help='Use antialiasing when resizing the image')
+
+    if sys.version_info[1] < 9:
+        parser.add_argument('--antialias', action='store_true', help='Use antialiasing when resizing the image')
+        parser.add_argument('--wandb',action='store_true', help='Use Weights and Biases for logging.')
+        parser.add_argument('--save-video', action='store_true', required=True, help='Save video of model run.')
+    else:
+        # this will require supplying either --antialias or --no-antialias
+        parser.add_argument('--antialias', action=argparse.BooleanOptionalAction, required=True, help='Use antialiasing when resizing the image')
+        parser.add_argument('--wandb', action=argparse.BooleanOptionalAction, required=True, help='Use Weights and Biases for logging.')
+        parser.add_argument('--save-video', action=argparse.BooleanOptionalAction, required=True, help='Save video of model run.')
+
     parser.add_argument('--model', type=str, required=True, help='Path to ONNX model.')
-    parser.add_argument('--wandb', action=argparse.BooleanOptionalAction, required=True, help='Use Weights and Biases for logging.')
-    parser.add_argument('--save-video', action=argparse.BooleanOptionalAction, required=True, help='Save video of model run.')
     parser.add_argument('--resize-mode', required=True, choices=['full', 'resize'], help='Resize mode of the input images (bags pre-processed for Vista).')
     parser.add_argument('--dynamics-model', default=None, help='Path to vehicle dynamics model (ONNX). IMPORTANT: ensure the model was trained on the same frequency as Vista is set up for. If not provided, the default (perfect) dynamics model will be used.')
     parser.add_argument('--road-width', type=float, default=2.5, help='Vista road width in meters.')
