@@ -55,6 +55,8 @@ def preprocess(full_obs, antialias, resize_mode):
         img = full_obs
 
     img = normalise( img.astype(np.float32) )
+    # Vista-synthesized images come from cv2, so need to convert BGR->RGB
+    img = img[:, :, ::-1]
     return img
 
 def grab_and_preprocess_obs(car, camera, antialias, resize_mode):
