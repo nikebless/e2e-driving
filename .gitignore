@@ -16,3 +16,5 @@ slurm*
 **/front_wide/*.png
 .env
 cache
+**/tmp/**
+**/vista_traces/**
