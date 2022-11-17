@@ -18,3 +18,5 @@ slurm*
 cache
 **/tmp/**
 **/vista_traces/**
+*.tfrecord
+*.tfrecord.spec
